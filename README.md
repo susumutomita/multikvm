@@ -2,7 +2,7 @@
 
 自宅の JetKVM を、Tailscale 上の iPhone から見るための個人用 IP-KVM です。会社管理の Windows PC にはソフトウェアを入れません。映像とキーボード、ポインタだけを扱い、クリップボード、ファイル転送、録画はしません。
 
-設計の正本は [docs/DESIGN.md](./docs/DESIGN.md) です。遅延の測り方は [docs/latency.md](./docs/latency.md) です。
+要件は [docs/REQUIREMENTS.md](./docs/REQUIREMENTS.md) です。設計の正本は [docs/DESIGN.md](./docs/DESIGN.md) です。遅延の測り方は [docs/latency.md](./docs/latency.md) です。
 
 ## 何が動くか
 

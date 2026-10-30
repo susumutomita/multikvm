@@ -1,5 +1,7 @@
 # MultiKVM 設計
 
+要件は [REQUIREMENTS.md](./REQUIREMENTS.md) に分けてあります。この文書は、その要件に対する設計判断です。
+
 個人用の IP-KVM ビューアです。会社管理の Windows PC には何も入れず、自宅ルータ上の JetKVM から、Tailscale 経由の iPhone で映像と HID だけを扱います。
 
 調査した JetKVM ファームウェアは `d646be873a136f1d7c2ec743e6fe826e43c65b30`（2026-10-30、`build: allow releasing from a branch other than dev`）です。計測値は実機が無いので載せていません。ソースから読めたことと、実機が必要なことを分けて書きます。
@@ -113,17 +115,17 @@ DTLS の暗号コスト自体は、ガラスからガラスの 50 ms 予算の�
 | デコードと表示 | 15 ms | デコード完了後の enqueue 時間。ジッタバッファはここより前 |
 | 入力 | 10 ms | キーを押してから、分配した HDMI の先の画面が変わるまで |
 
-合計が 50 ms を超えても、どの区間が越えたかを先に見ます。計測手順は [latency.md](./latency.md) です。オーバーレイは fps、kbps、RTT/2、enqueue、破棄フレーム、経路、時計の下位ミリ秒を出します。
+合計が 50 ms を超えても、どの区間が越えたかを先に見ます。計測手順は [latency.md](./latency.md) です。目標との差は [#5](https://github.com/susumutomita/multikvm/issues/5) で記録します。オーバーレイは fps、kbps、RTT/2、enqueue、破棄フレーム、経路、時計の下位ミリ秒を出します。
 
 ## 入力と外部ディスプレイ
 
 キーボードは `UIKey` と `GCKeyboard` です。同じキーが 50 ms 以内に両方から来たら、`UIKey` を採用します。HHKB の JIS と US、Windows の JIS と US を設定で選び、usage を変換します。ポインタは絶対と相対を切り替え、スクロールは `wheelReport` です。絶対座標は映像のレターボックスを除いた 0 から 1 を、0 から 32767 に写します。
 
-外部ディスプレイは、iPhone の画面ミラー（AirPlay を含む）を前提にします。専用の `UIWindow` は iOS 16 以降のシーン構成が増えるので、今回は作りません。バックグラウンドに入ると切断し、非アクティブではキーを離します。
+外部ディスプレイは、iPhone の画面ミラー（AirPlay を含む）を前提にします。HHKB、トラックパッド、外部モニタの実機確認は [#4](https://github.com/susumutomita/multikvm/issues/4) です。専用の `UIWindow` は iOS 16 以降のシーン構成が増えるので、今回は作りません。バックグラウンドに入ると切断し、非アクティブではキーを離します。
 
 ## 今回は作らないもの
 
-2 台の PC は、箱を 2 つと、保存するホスト文字列を配列にすることです。今の `pairedHost` は 1 本です。切り替え UI は次の変更で足します。
+2 台の PC は、箱を 2 つと、保存するホスト文字列を配列にすることです。今の `pairedHost` は 1 本です。切り替え UI は次の変更で足します。2 台切り替えと内容を含まない通知の追跡は [#6](https://github.com/susumutomita/multikvm/issues/6) です。
 
 通知は、映像の決まった領域が変化したかどうかの真偽だけを箱側で出し、文字も OCR もクラウドも載せない想定です。内容が要る通知は作りません。実装はファームウェアと一緒に後です。
 
@@ -133,4 +135,4 @@ RK3588 の自作箱は、未改造 JetKVM とこのクライアントで 50 ms �
 
 Linux で `swift test` したのは、シグナリングの JSON、ICE の Tailscale 選別、接続フェーズ、HID レポート、JIS 変換、H.264 の depacketize、SDP の `playout-delay`、バーコードの往復です。
 
-iOS アプリは、この環境に Xcode が無いのでコンパイルしていません。WebRTC 156 の Objective-C 名、`AVSampleBufferDisplayLayer`、実機の ICE、HHKB、パスワード Cookie、ミラーは、JetKVM と iPhone が必要です。詳細は [latency.md](./latency.md) と README の未検証一覧です。
+iOS アプリは、この環境に Xcode が無いのでコンパイルしていません。WebRTC 156 の Objective-C 名、`AVSampleBufferDisplayLayer`、実機の ICE、HHKB、パスワード Cookie、ミラーは、JetKVM と iPhone が必要です。実機ビルドは [#2](https://github.com/susumutomita/multikvm/issues/2)、宅外の直結経路は [#3](https://github.com/susumutomita/multikvm/issues/3) です。詳細は [latency.md](./latency.md) と README の未検証一覧です。
