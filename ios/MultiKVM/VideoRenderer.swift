@@ -41,6 +41,8 @@ struct RendererSnapshot: Equatable {
 /// AirPlay ミラーを止めないため、画面収録の防止は設定しない。
 final class VideoRenderer {
     let view = VideoLayerView()
+    var onNeedsKeyframe: (() -> Void)?
+    private let recovery = H264RecoveryGate(waitingForKeyframe: true)
     private let stateLock = NSLock()
     private var videoSize = PlaneSize(width: 0, height: 0)
     private var dropped = 0
@@ -64,6 +66,8 @@ final class VideoRenderer {
     }
 
     func reset() {
+        recovery.requestKeyframe()
+        onNeedsKeyframe = nil
         stateLock.withLock {
             sps = nil
             pps = nil
@@ -89,17 +93,21 @@ final class VideoRenderer {
             if let sps, let pps {
                 updateFormat(sps: sps, pps: pps)
             }
+            guard recovery.accepts(unit) else {
+                dropped += 1
+                return nil
+            }
             let slices = unit.sliceUnits
             guard !slices.isEmpty, let format else { return nil }
             return makeSample(slices, format: format)
         }
         guard let sample else { return }
         let layer = view.displayLayer
-        if layer.status == .failed {
-            layer.flush()
-        }
-        if !layer.isReadyForMoreMediaData {
+        if layer.status == .failed || !layer.isReadyForMoreMediaData {
             stateLock.withLock { dropped += 1 }
+            recovery.requestKeyframe()
+            layer.flushAndRemoveImage()
+            onNeedsKeyframe?()
             return
         }
         layer.enqueue(sample)

@@ -76,7 +76,7 @@ Tailscale のアドレスへローカル WebSocket だけを開きます。ク�
 
 候補は次の順で絞ります。`typ relay` と `typ srflx` は捨てます。host 候補に Tailscale があれば（IPv4 は 100.64.0.0/10、第 2 オクテット 64 から 127。IPv6 は `fd7a:115c:a1e0:`）、それだけを出します。無ければ LAN の host を出します。ローカル候補はオファーを送るまで溜め、サーバがセッション無しで捨てるのを避けます。リモートの非 Tailscale 候補は約 400 ms 待ち、その間に Tailscale が来たら LAN は捨てます。
 
-受信した H.264 は、WebRTC の描画ビューを使わず、`AVSampleBufferDisplayLayer` に `kCMSampleAttachmentKey_DisplayImmediately` で積めます。`isReadyForMoreMediaData` でなければ捨てます。SPS と IDR を見るまではデコード結果 4（キーフレーム要求）を返します。High プロファイルをデコードできることが条件です。デコーダのコールバックを空のままにすると受信パイプラインがフレームを抱えることがあるので、幅 2 高さ 2 の空フレームで会計だけ返します。表示に使う画素はこちらです。
+受信した H.264 は、WebRTC の描画ビューを使わず、`AVSampleBufferDisplayLayer` に `kCMSampleAttachmentKey_DisplayImmediately` で積めます。`isReadyForMoreMediaData` が false または表示失敗なら、表示を初期化してキーフレームを要求し、次の IDR から再開します。参照フレームを失った状態で後続の interframe を表示しません。SPS と IDR を見るまではデコード結果 4（キーフレーム要求）を返します。High プロファイルをデコードできることが条件です。デコーダのコールバックを空のままにすると受信パイプラインがフレームを抱えることがあるので、幅 2 高さ 2 の空フレームで会計だけ返します。表示に使う画素はこちらです。
 
 WebRTC の受信ジッタバッファはデコーダの前に残ります。`playout-delay` 0 は、JetKVM が Chrome と libwebrtc を 0 に固定するために既に使っている仕組みです。Safari は同じように扱いません。ネイティブの libwebrtc クライアントを選ぶ理由はここです。依存は stasel/WebRTC の exact `156.0.0`（revision `3cc466ea040e5dcd1344697bf211dc4c079d1a0c`、product 名 `WebRTC`）です。バイナリの XCFramework はリポジトリに同梱しません。チェックサムは上流 `Package.swift` の `43c2a6f7a650185bbc911d7605a979589671886e8fc0ac283f54fdf3f511dc46` です。
 

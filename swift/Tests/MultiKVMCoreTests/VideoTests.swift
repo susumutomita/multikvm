@@ -1,9 +1,24 @@
 import XCTest
+
 @testable import MultiKVMCore
 
 final class VideoTests: XCTestCase {
+    func testDroppedReferenceRequiresIdrBeforeResumingInterframes() {
+        let gate = H264RecoveryGate()
+        let inter = H264AccessUnit(nalUnits: [Data([0x41, 1])])
+        let idr = H264AccessUnit(nalUnits: [Data([0x65, 1])])
+        XCTAssertTrue(gate.accepts(inter))
+        gate.requestKeyframe()
+        XCTAssertFalse(gate.accepts(inter))
+        XCTAssertFalse(gate.accepts(H264AccessUnit(nalUnits: [Data([0x67, 1])])))
+        XCTAssertTrue(gate.accepts(idr))
+        XCTAssertTrue(gate.accepts(inter))
+    }
+
     func testAnnexBAndAVCC() {
-        let annex = Data([0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x00, 0x00, 0x00, 0x01, 0x65, 0x88])
+        let annex = Data([
+            0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x00, 0x00, 0x00, 0x01, 0x65, 0x88,
+        ])
         let unit = H264AccessUnit.parseBitstream(annex)
         XCTAssertEqual(unit.nalUnits.map { [UInt8]($0) }, [[0x67, 0x42], [0x68, 0xCE], [0x65, 0x88]])
         XCTAssertEqual(unit.sps, Data([0x67, 0x42]))
@@ -18,16 +33,19 @@ final class VideoTests: XCTestCase {
 
     func testFUAAndSTAP() {
         let depacketizer = H264Depacketizer()
-        let start = depacketizer.push(RtpH264Packet(payload: Data([0x7C, 0x85, 0x11, 0x22]), marker: false, timestamp: 90))
+        let start = depacketizer.push(
+            RtpH264Packet(payload: Data([0x7C, 0x85, 0x11, 0x22]), marker: false, timestamp: 90))
         XCTAssertNil(start)
-        let end = depacketizer.push(RtpH264Packet(payload: Data([0x7C, 0x45, 0x33, 0x44]), marker: true, timestamp: 90))
+        let end = depacketizer.push(
+            RtpH264Packet(payload: Data([0x7C, 0x45, 0x33, 0x44]), marker: true, timestamp: 90))
         XCTAssertEqual(end?.nalUnits, [Data([0x65, 0x11, 0x22, 0x33, 0x44])])
 
-        let stap = depacketizer.push(RtpH264Packet(
-            payload: Data([0x78, 0x00, 0x03, 0x67, 0x42, 0x00, 0x00, 0x02, 0x68, 0x01]),
-            marker: true,
-            timestamp: 180
-        ))
+        let stap = depacketizer.push(
+            RtpH264Packet(
+                payload: Data([0x78, 0x00, 0x03, 0x67, 0x42, 0x00, 0x00, 0x02, 0x68, 0x01]),
+                marker: true,
+                timestamp: 180
+            ))
         XCTAssertEqual(stap?.nalUnits, [Data([0x67, 0x42, 0x00]), Data([0x68, 0x01])])
 
         let single = depacketizer.push(RtpH264Packet(payload: Data([0x65, 0x88]), marker: true, timestamp: 270))
@@ -37,7 +55,8 @@ final class VideoTests: XCTestCase {
     }
 
     func testOfferMungeAndProblems() {
-        let sdp = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 H264/90000\r\na=extmap:1 urn:ietf:params:rtp-hdrext:sdes:mid\r\n"
+        let sdp =
+            "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 H264/90000\r\na=extmap:1 urn:ietf:params:rtp-hdrext:sdes:mid\r\n"
         let munged = OfferSdp.insertingPlayoutDelay(sdp)
         XCTAssertTrue(munged.contains("a=extmap:2 \(OfferSdp.playoutDelayURI)"))
         XCTAssertTrue(OfferSdp.problems(in: munged).isEmpty)

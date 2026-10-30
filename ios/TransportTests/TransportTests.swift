@@ -38,6 +38,26 @@ final class TransportTests: XCTestCase {
         peer.stop()
     }
 
+    func testLocalFrameLossRequestsKeyframeAndSuppressesInterframesUntilIdr() {
+        let recovery = H264RecoveryGate()
+        let decoder = PassthroughH264Decoder(recovery: recovery)
+        let image = RTCEncodedImage()
+        image.buffer = Data([0, 0, 0, 1, 0x67, 1])
+        var delivered = 0
+        decoder.setCallback { _ in delivered += 1 }
+        recovery.requestKeyframe()
+        XCTAssertEqual(decoder.decode(image, missingFrames: false, codecSpecificInfo: nil, renderTimeMs: 0), 4)
+        image.buffer = Data([0, 0, 0, 1, 0x65, 1])
+        XCTAssertEqual(decoder.decode(image, missingFrames: false, codecSpecificInfo: nil, renderTimeMs: 0), 0)
+        recovery.requestKeyframe()
+        image.buffer = Data([0, 0, 0, 1, 0x41, 1])
+        XCTAssertEqual(decoder.decode(image, missingFrames: false, codecSpecificInfo: nil, renderTimeMs: 0), 4)
+        XCTAssertEqual(delivered, 1)
+        image.buffer = Data([0, 0, 0, 1, 0x65, 1])
+        XCTAssertEqual(decoder.decode(image, missingFrames: false, codecSpecificInfo: nil, renderTimeMs: 0), 0)
+        XCTAssertEqual(delivered, 2)
+    }
+
     func testDecoderAcknowledgesOriginalRtpTimestamp() {
         let decoder = PassthroughH264Decoder()
         let image = RTCEncodedImage()

@@ -373,6 +373,7 @@ final class SessionController: ObservableObject {
     private func startPeer() {
         let id = connectionID
         let linkPeer = PeerLink()
+        renderer.onNeedsKeyframe = { [weak linkPeer] in linkPeer?.requestKeyframe() }
         linkPeer.sendSignaling = { [weak self] text in
             guard let self, self.connectionID == id else { return }
             self.socket?.send(.string(text)) { [weak self] error in
@@ -384,7 +385,7 @@ final class SessionController: ObservableObject {
             }
         }
         linkPeer.onVideo = { [weak self] data, width, height in
-            Task { @MainActor in
+            DispatchQueue.main.async { [weak self] in
                 guard let self, self.connectionID == id else { return }
                 self.renderer.render(data, width: width, height: height)
                 let shot = self.renderer.snapshot()

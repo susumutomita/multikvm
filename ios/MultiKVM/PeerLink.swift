@@ -9,6 +9,12 @@ final class PassthroughH264Decoder: NSObject, RTCVideoDecoder {
     private var callback: RTCVideoDecoderCallback?
     private var sawParameterSet = false
     private var sawIDR = false
+    private let recovery: H264RecoveryGate
+
+    init(recovery: H264RecoveryGate = H264RecoveryGate()) {
+        self.recovery = recovery
+        super.init()
+    }
 
     func setCallback(_ callback: @escaping RTCVideoDecoderCallback) {
         self.callback = callback
@@ -30,12 +36,19 @@ final class PassthroughH264Decoder: NSObject, RTCVideoDecoder {
         renderTimeMs: Int64
     ) -> Int {
         let data = encodedImage.buffer
-        onAccessUnit?(data, encodedImage.encodedWidth, encodedImage.encodedHeight)
         let unit = H264AccessUnit.parseBitstream(data)
         if unit.sps != nil { sawParameterSet = true }
         if unit.nalUnits.contains(where: { H264AccessUnit.nalType($0) == 5 }) {
             sawIDR = true
         }
+        guard recovery.accepts(unit) else {
+            // Parameter sets may arrive separately from the replacement IDR.
+            if unit.sliceUnits.isEmpty {
+                onAccessUnit?(data, encodedImage.encodedWidth, encodedImage.encodedHeight)
+            }
+            return 4
+        }
+        onAccessUnit?(data, encodedImage.encodedWidth, encodedImage.encodedHeight)
         // コールバックを呼ばないと受信側がフレームを未完了のまま抱える実装がある。
         // 表示は AVSampleBufferDisplayLayer が行う。ここは 2x2 の空フレームで会計だけ返す。
         // webrtc video_error_codes.h の WEBRTC_VIDEO_CODEC_OK_REQUEST_KEYFRAME は 4。
@@ -60,6 +73,7 @@ final class PassthroughH264Decoder: NSObject, RTCVideoDecoder {
 
 final class PassthroughDecoderFactory: NSObject, RTCVideoDecoderFactory {
     var onAccessUnit: ((Data, Int32, Int32) -> Void)?
+    let recovery = H264RecoveryGate()
 
     func supportedCodecs() -> [RTCVideoCodecInfo] {
         RTCDefaultVideoDecoderFactory().supportedCodecs().filter {
@@ -68,7 +82,7 @@ final class PassthroughDecoderFactory: NSObject, RTCVideoDecoderFactory {
     }
 
     func createDecoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoDecoder)? {
-        let decoder = PassthroughH264Decoder()
+        let decoder = PassthroughH264Decoder(recovery: recovery)
         decoder.onAccessUnit = { [weak self] data, width, height in
             self?.onAccessUnit?(data, width, height)
         }
@@ -102,6 +116,8 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
     private var remoteFlush: DispatchWorkItem?
     private var offerSent = false
     private var pendingSignals: [String] = []
+
+    func requestKeyframe() { decoderFactory.recovery.requestKeyframe() }
 
     func start() {
         WebRTCBoot.prepare()
