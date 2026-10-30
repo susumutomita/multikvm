@@ -60,17 +60,26 @@ public enum RelativePointer {
     }
 }
 
-public enum Wheel {
-    /// 正の userDeltaY は下方向のスクロール。HID のホイールは上が正なので符号を反転する。
-    public static func hid(userDeltaX: Double, userDeltaY: Double, notchPoints: Double = 40) -> (wheelX: Int, wheelY: Int)? {
-        let x = ticks(userDeltaX, notchPoints: notchPoints)
-        let y = -ticks(userDeltaY, notchPoints: notchPoints)
-        if x == 0 && y == 0 {
-            return nil
-        }
-        return (x, y)
-    }
+public struct WheelAccumulator {
+    private var x = 0.0
+    private var y = 0.0
 
+    public init() {}
+
+    public mutating func event(dx: Double, dy: Double, notchPoints: Double = 40) -> (wheelX: Int, wheelY: Int)? {
+        guard dx.isFinite, dy.isFinite, notchPoints.isFinite, notchPoints > 0 else { return nil }
+        x += dx
+        y += dy
+        let ticksX = Int(max(-127, min(127, (x / notchPoints).rounded(.towardZero))))
+        let ticksY = Int(max(-127, min(127, (y / notchPoints).rounded(.towardZero))))
+        x -= Double(ticksX) * notchPoints
+        y -= Double(ticksY) * notchPoints
+        guard ticksX != 0 || ticksY != 0 else { return nil }
+        return (ticksX, -ticksY)
+    }
+}
+
+public enum Wheel {
     public static func jsonRpc(id: Int, wheelX: Int, wheelY: Int) -> String {
         let object: [String: Any] = [
             "jsonrpc": "2.0",
@@ -82,17 +91,7 @@ public enum Wheel {
         return data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 
-    private static func ticks(_ points: Double, notchPoints: Double) -> Int {
-        if points == 0 || notchPoints == 0 {
-            return 0
-        }
-        let scaled = (points / notchPoints).rounded()
-        var value = Int(scaled)
-        if value == 0 && abs(points) >= 8 {
-            value = points > 0 ? 1 : -1
-        }
-        return max(-127, min(127, value))
-    }
+
 }
 
 public struct PlaneSize: Equatable {

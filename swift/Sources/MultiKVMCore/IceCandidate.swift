@@ -45,6 +45,7 @@ public struct HostCandidateGate {
     private var buffered: [IceCandidate] = []
     private var emitted: Set<String> = []
     private var sawTailnet = false
+    private var fallbackActive = false
 
     public init() {}
 
@@ -58,7 +59,7 @@ public struct HostCandidateGate {
             return emit(where: { $0.kind == .tailnetHost })
         case .otherHost:
             buffered.append(candidate)
-            return []
+            return fallbackActive && !sawTailnet ? emit(where: { $0.kind == .otherHost }) : []
         }
     }
 
@@ -67,6 +68,7 @@ public struct HostCandidateGate {
         if sawTailnet {
             return emit(where: { $0.kind == .tailnetHost })
         }
+        fallbackActive = true
         return emit(where: { $0.kind == .otherHost })
     }
 

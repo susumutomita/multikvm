@@ -77,6 +77,19 @@ final class KeyboardTests: XCTestCase {
 }
 
 final class PointerTests: XCTestCase {
+    func testSlowScrollPreservesMovementAcrossCallbacksAndDirectionChanges() {
+        var wheel = WheelAccumulator()
+        var total = 0
+        for _ in 0..<20 { total += wheel.event(dx: 0, dy: 4)?.wheelY ?? 0 }
+        XCTAssertEqual(total, -2)
+        XCTAssertNil(wheel.event(dx: 12, dy: -12))
+        XCTAssertNil(wheel.event(dx: -12, dy: 12))
+        XCTAssertNil(wheel.event(dx: 0, dy: 39))
+        XCTAssertEqual(wheel.event(dx: 40, dy: 1)?.wheelY, -1)
+        XCTAssertEqual(wheel.event(dx: -40, dy: -40)?.wheelX, -1)
+        XCTAssertNil(wheel.event(dx: .nan, dy: .infinity))
+    }
+
     func testAbsoluteChannelAndRange() {
         var pointer = AbsolutePointer()
         let first = pointer.event(xUnit: 0, yUnit: 1, buttons: 0)
@@ -111,13 +124,14 @@ final class PointerTests: XCTestCase {
         XCTAssertEqual(reports[2].bytes[2], 0)
         XCTAssertTrue(reports.allSatisfy { $0.channel == .reliable && $0.bytes[3] == 0x01 })
 
-        let down = Wheel.hid(userDeltaX: 0, userDeltaY: 40)
+        var wheel = WheelAccumulator()
+        let down = wheel.event(dx: 0, dy: 40)
         XCTAssertEqual(down?.wheelY, -1)
         XCTAssertEqual(down?.wheelX, 0)
-        let up = Wheel.hid(userDeltaX: 80, userDeltaY: -40)
+        let up = wheel.event(dx: 80, dy: -40)
         XCTAssertEqual(up?.wheelX, 2)
         XCTAssertEqual(up?.wheelY, 1)
-        XCTAssertNil(Wheel.hid(userDeltaX: 0, userDeltaY: 0))
+        XCTAssertNil(wheel.event(dx: 0, dy: 0))
         let json = Wheel.jsonRpc(id: 7, wheelX: 0, wheelY: -1)
         XCTAssertTrue(json.contains(#""method":"wheelReport""#))
         XCTAssertTrue(json.contains(#""wheelY":-1"#))

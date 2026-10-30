@@ -39,6 +39,21 @@ final class EndpointTests: XCTestCase {
 }
 
 final class IceGateTests: XCTestCase {
+    func testLateLanCandidatesAreEmittedAfterFallbackButStopWhenTailnetArrives() {
+        var gate = HostCandidateGate()
+        let first = IceCandidate(sdp: "candidate:1 1 UDP 1 192.168.1.20 9 typ host", sdpMid: "0", lineIndex: 0)
+        let late = IceCandidate(sdp: "candidate:2 1 UDP 1 10.0.0.20 9 typ host", sdpMid: "0", lineIndex: 0)
+        let tail = IceCandidate(sdp: "candidate:3 1 UDP 1 100.65.1.2 9 typ host", sdpMid: "0", lineIndex: 0)
+        XCTAssertTrue(gate.receive(first).isEmpty)
+        XCTAssertEqual(gate.flush(), [first])
+        XCTAssertEqual(gate.receive(late), [late])
+        XCTAssertTrue(gate.receive(late).isEmpty)
+        XCTAssertEqual(gate.receive(tail), [tail])
+        let later = IceCandidate(sdp: "candidate:4 1 UDP 1 10.0.0.21 9 typ host", sdpMid: "0", lineIndex: 0)
+        XCTAssertTrue(gate.receive(later).isEmpty)
+        XCTAssertTrue(gate.flush().isEmpty)
+    }
+
     func testTailnetDropsLanAndRelay() {
         var gate = HostCandidateGate()
         let lan = IceCandidate(sdp: "candidate:1 1 UDP 1 192.168.1.20 9 typ host", sdpMid: "0", lineIndex: 0)

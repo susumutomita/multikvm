@@ -18,9 +18,10 @@
 
 ## 検証記録
 
-- `make ci_local`: 成功。Swift 24 件、Bun harness 102 件、依存監査、公開品質、textlint、lint を通過。既存の ESLint 警告 18 件は残る。
+- `make ci_local`: 成功。Swift 26 件、Bun harness 102 件、依存監査、公開品質、textlint、lint を通過。既存の ESLint 警告 18 件は残る。
 - `swift test --package-path ios`: WebRTC 156 のネイティブテスト 2 件成功。実 offer の H.264 High、packetization-mode、音声なし、RTP timestamp の保持を確認。
 - Xcode 27.2: Simulator Debug のアプリとテストターゲット、および iphoneos Release を署名なしでビルド成功。
+- 自動レビューの追加 2 件も修正。低速スクロールの端数を累積し、fallback 開始後の遅い LAN 候補も処理する。
 - 独立レビューで 7 件を発見し、修正後の再レビューで解消を確認。追加でカーソル位置の保持と HTTP redirect 拒否を確認。
 - 起点の CI は Ubuntu 26.04 で libxml2 の導入に失敗していた。Swift 用ランナーを配布物と同じ Ubuntu 24.04 に固定。
 - 既存 Tailscale は Running、JetKVM 候補 1 台がオンライン。GET `/device` は 401。パスワードを取得せず、ログインと HID は未実施。
@@ -28,7 +29,7 @@
 ## 実機確認と環境の制約
 
 - ローカルの CoreSimulator 1174.9.2 と Xcode 要求 1174.21.0 が不整合。シミュレータの起動と UI 操作は未実施。システムの更新は行わない。
-- 接続ライフサイクルの iOS XCTest 4 件を追加し、CI で実行する。ローカルではコンパイルのみ。
+- 接続ライフサイクルの iOS XCTest 4 件を追加。初回更新の CI（run 41094802654）で全件成功。ローカルではコンパイルのみ。
 - 実機 iPhone への署名・インストール、認証後の Cookie と映像、Tailscale host ICE、HHKB、トラックパッド、AirPlay、50 ms の遅延は未確認。
 - 実機のローカルパスワードは利用者がアプリへ直接入力する。秘密値をファイルや作業ログへ渡さない。
 - マージ・配布・VPN 設定変更は行わない。

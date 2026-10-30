@@ -52,6 +52,7 @@ final class SessionController: ObservableObject {
     private var peer: PeerLink?
     private var keyboard = KeyboardModel()
     private var absolute = AbsolutePointer()
+    private var wheel = WheelAccumulator()
     private var lastAbsolutePoint = (x: 0.0, y: 0.0)
     private var rpcID = 0
     private var receiving = false
@@ -156,6 +157,7 @@ final class SessionController: ObservableObject {
         measurementTask = nil
         measurementFlash = false
         keyboardEvents = KeyboardEventFilter()
+        wheel = WheelAccumulator()
         injectedShift = false
         let report = keyboard.clear()
         absolute = AbsolutePointer()
@@ -241,9 +243,9 @@ final class SessionController: ObservableObject {
     }
 
     func scroll(dx: Double, dy: Double) {
-        guard let wheel = Wheel.hid(userDeltaX: dx, userDeltaY: dy) else { return }
+        guard let report = wheel.event(dx: dx, dy: dy) else { return }
         rpcID += 1
-        peer?.sendRpc(Wheel.jsonRpc(id: rpcID, wheelX: wheel.wheelX, wheelY: wheel.wheelY))
+        peer?.sendRpc(Wheel.jsonRpc(id: rpcID, wheelX: report.wheelX, wheelY: report.wheelY))
     }
 
     private func resolve(usage: UInt8?, character: Character?) -> UInt8? {
