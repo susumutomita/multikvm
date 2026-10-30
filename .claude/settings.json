@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "statusLine": {
+    "type": "command",
+    "command": "echo \"$(git branch --show-current 2>/dev/null || echo 'no-branch') | $(git diff --stat --shortstat 2>/dev/null | tail -1 | sed 's/^ //' || echo 'clean')\""
+  },
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Write(./secrets/**)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Edit(./secrets/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // empty' | { read -r cmd; echo \"$cmd\" | grep -qE 'rm -rf|rm -r /|> /dev/sda|mkfs|dd if=|:\\(\\)\\{ :\\|:& \\};:' && { echo '危険なコマンドが検出されたため、安全のためブロックしました。' >&2; exit 2; }; exit 0; }",
+            "statusMessage": "危険なコマンドをチェック中..."
+          }
+        ]
+      }
+    ]
+  }
+}

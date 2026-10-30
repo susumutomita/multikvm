@@ -1,0 +1,88 @@
+name: ci
+
+# Supply Chain Security:
+# - All actions pinned to full SHA for immutable references
+# - Safe Chain runs before dependency installation
+# - Lifecycle scripts disabled during install
+# - Minimal permissions following principle of least privilege
+
+permissions:
+  contents: read
+  packages: read
+  actions: read
+
+on:
+  # PR ブランチへの push で push + pull_request の二重実行を起こさないよう、
+  # push は main (= merge 後) に限定する。
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一 ref の古い実行を自動キャンセルし、押し直し分の Actions 時間を消す。
+# main は履歴として全 commit の CI 結果を残したいためキャンセルしない
+# (連続 merge で先行 commit の run が消えるのを防ぐ)。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    # ハング時に課金と queue 滞留を止める上限。通常実行は数分で終わる。
+    timeout-minutes: 15
+    steps:
+      - name: Check out the code
+        # actions/checkout v4.3.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: true
+
+      - name: Setup Bun
+        # oven-sh/setup-bun v2.0.2
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+
+      # Supply Chain Security: Setup safe-chain before dependency installation
+      # safe-chain 自体のサプライチェイン経由侵入を防ぐため、
+      # (1) --ignore-scripts を必ず付ける (Bun は npm_config_ignore_scripts を読まない)
+      # (2) version を明示固定する (latest を引かない)
+      # version を上げるときは ADR / 別 PR でレビューする。
+      - name: Setup safe-chain
+        run: |
+          bun add -g --ignore-scripts @aikidosec/safe-chain@1.5.3
+          safe-chain setup-ci
+
+      # Supply Chain Security: Disable lifecycle scripts during install
+      # Note: --safe-chain-skip-minimum-package-age is used because transitive
+      # dependencies (e.g. textlint -> @modelcontextprotocol/sdk -> hono) may
+      # include recently released packages that have not yet aged out of the
+      # safe-chain minimum age check.
+      - name: Install packages via packages.json
+        env:
+          npm_config_ignore_scripts: "true"
+          CI: "true"
+        run: make install_ci
+
+      # Supply Chain Security: dependency lifecycle script auditor (ADR-0007)。
+      # scripts/audit-baseline.json と比較し、新規 lifecycle script 付きパッケージ /
+      # 既存依存への新規 hook 追加を検出して fail させる。実行を止める
+      # --ignore-scripts に対し、こちらは攻撃面の増加に「気づく」層。
+      - name: Audit dependency lifecycle scripts
+        run: make audit_deps
+
+      # 各ゲートを個別 step に分け、どの enforcement が失敗したかを Actions UI で
+      # 直接判別できるようにする。Makefile の before-commit と同じ順序を保つ。
+      - name: Run architecture harness
+        run: bun scripts/architecture-harness.ts --fail-on=error
+
+      - name: Test architecture harness
+        run: make harness_test
+
+      - name: Run pre-release checks
+        run: make pre_release_check
+
+      - name: Lint documentation
+        run: make lint_text
+
+      - name: Lint and format check
+        run: make lint
