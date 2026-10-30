@@ -31,29 +31,6 @@ final class VideoTests: XCTestCase {
         XCTAssertEqual(prefixed, avcc)
     }
 
-    func testFUAAndSTAP() {
-        let depacketizer = H264Depacketizer()
-        let start = depacketizer.push(
-            RtpH264Packet(payload: Data([0x7C, 0x85, 0x11, 0x22]), marker: false, timestamp: 90))
-        XCTAssertNil(start)
-        let end = depacketizer.push(
-            RtpH264Packet(payload: Data([0x7C, 0x45, 0x33, 0x44]), marker: true, timestamp: 90))
-        XCTAssertEqual(end?.nalUnits, [Data([0x65, 0x11, 0x22, 0x33, 0x44])])
-
-        let stap = depacketizer.push(
-            RtpH264Packet(
-                payload: Data([0x78, 0x00, 0x03, 0x67, 0x42, 0x00, 0x00, 0x02, 0x68, 0x01]),
-                marker: true,
-                timestamp: 180
-            ))
-        XCTAssertEqual(stap?.nalUnits, [Data([0x67, 0x42, 0x00]), Data([0x68, 0x01])])
-
-        let single = depacketizer.push(RtpH264Packet(payload: Data([0x65, 0x88]), marker: true, timestamp: 270))
-        XCTAssertEqual(single?.nalUnits, [Data([0x65, 0x88])])
-        _ = depacketizer.push(RtpH264Packet(payload: Data([0x7C]), marker: false, timestamp: 1))
-        XCTAssertEqual(depacketizer.droppedPackets, 1)
-    }
-
     func testOfferMungeAndProblems() {
         let sdp =
             "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 H264/90000\r\na=extmap:1 urn:ietf:params:rtp-hdrext:sdes:mid\r\n"

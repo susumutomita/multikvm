@@ -35,7 +35,7 @@
     "lint": "bun biome check . && bun run lint:eslint",
     "lint:eslint": "eslint .",
     "lint:fix": "bun biome check --write . && eslint . --fix",
-    "lint:text": "bun textlint ./README.md ./SECURITY.md ./docs/DESIGN.md ./docs/REQUIREMENTS.md ./docs/latency.md",
+    "lint:text": "bun textlint ./README.md ./SECURITY.md ./docs/DESIGN.md ./docs/QUALITY.md ./docs/REQUIREMENTS.md ./docs/latency.md",
     "check:pre-release": "bun scripts/architecture-harness.ts --pre-release --fail-on=error",
     "lint-staged": "lint-staged",
     "format": "bun biome format --write .",

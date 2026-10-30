@@ -10,9 +10,7 @@ public enum LinkPhase: Equatable {
 
 public enum LinkEvent: Equatable {
     case begin
-    case authOk
-    case authNotRequired
-    case authFailed(String)
+    case authenticated
     case metadata(String)
     case confirm
     case reject
@@ -22,9 +20,9 @@ public enum LinkEvent: Equatable {
 }
 
 public struct LinkState: Equatable {
-    public var phase: LinkPhase
-    public var pairedHost: String?
-    public var host: String
+    public private(set) var phase: LinkPhase
+    public private(set) var pairedHost: String?
+    public let host: String
 
     public init(pairedHost: String?, host: String) {
         self.phase = .idle
@@ -36,10 +34,8 @@ public struct LinkState: Equatable {
         switch event {
         case .begin:
             phase = phase == .idle ? .checkingAuth : .closed(reason: "すでに開始しています")
-        case .authOk, .authNotRequired:
+        case .authenticated:
             phase = phase == .checkingAuth ? .openingSignaling : .closed(reason: "認証の順序が崩れました")
-        case .authFailed(let reason):
-            phase = .closed(reason: reason)
         case .metadata(let version):
             guard phase == .openingSignaling else {
                 phase = .closed(reason: "デバイス情報の順序が崩れました")

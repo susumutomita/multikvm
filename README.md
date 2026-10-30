@@ -56,7 +56,7 @@ make ci_local
 - AirPlay ミラー中に映像が黒くならないこと。
 - ガラスからガラスが約 50 ms に収まること。
 
-検証結果と残る実機確認は [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) に記録しています。
+検証結果と残る実機確認は [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md)、接続コードの品質改善は [docs/QUALITY.md](./docs/QUALITY.md) に記録しています。
 
 ## ライセンス
 

@@ -53,7 +53,7 @@ Pion は全インタフェースの host 候補を集めます。JetKVM の Tail
 
 `playout-delay` 拡張（`internal/playoutdelay`）は、オファーが `http://www.webrtc.org/experiments/rtp-hdrext/playout-delay` を交渉したときだけ min=max=0 を刻みます。`webrtc.go` のコメントは、Chrome のジッタバッファが一度上がると下がりにくく、音声との同期が映像を遅らせる、と書いています。クライアントは音声の m-line を出さず、この拡張を出します。フィールドトライアル `WebRTC-ForcePlayoutDelay/min_ms:0,max_ms:0` は補助で、拡張の代わりにはしません。
 
-データチャネルはクライアントがオファー前に作ります。公式 UI の順は `rpc`、`hidrpc`、`hidrpc-unreliable-ordered`、`hidrpc-unreliable-nonordered` です。`terminal`、`serial`、`cdcacm`、`upload` は作りません。クリップボードもファイル転送もシリアルも使いません。
+データチャネルはクライアントがオファー前に作ります。本アプリが使うのは `rpc` と reliable ordered の `hidrpc` です。公式 UI にある unreliable 系 2 チャネルは、送信経路が無いため作りません。ファームウェアはラベルごとに独立して受け付けます。`terminal`、`serial`、`cdcacm`、`upload` は作りません。クリップボードもファイル転送もシリアルも使いません。
 
 `rpc` は JSON-RPC 2.0 のテキストで、`params` はオブジェクトです。ホイールは HID の型 4 が定義されていますが、`handleHidRPCMessage` は処理しません。使うのはメソッド `wheelReport` の `{wheelY, wheelX}`（int8）です。ブラウザの `deltaY` 正（下）は、HID の正が上なので符号を反転します。
 
@@ -133,6 +133,6 @@ RK3588 の自作箱は、未改造 JetKVM とこのクライアントで 50 ms �
 
 ## 検証の境界
 
-Linux で `swift test` したのは、シグナリングの JSON、ICE の Tailscale 選別、接続フェーズ、HID レポート、JIS 変換、H.264 の depacketize、SDP の `playout-delay`、バーコードの往復です。
+Linux で `swift test` したのは、シグナリングの JSON、ICE の Tailscale 選別、接続フェーズ、HID レポート、JIS 変換、H.264 の Annex-B/AVCC 分割、SDP の `playout-delay`、バーコードの往復です。
 
 iOS アプリは Xcode 27.2 でシミュレータ向けと実機向けの署名なしビルドを確認しました。WebRTC 156 の offer 生成とデコーダの時刻は macOS のネイティブテストでも検証します。実機の ICE、HHKB、パスワード Cookie、ミラーは、JetKVM と iPhone が必要です。実機ビルドは [#2](https://github.com/susumutomita/multikvm/issues/2)、宅外の直結経路は [#3](https://github.com/susumutomita/multikvm/issues/3) です。詳細は [latency.md](./latency.md) と README の未検証一覧です。

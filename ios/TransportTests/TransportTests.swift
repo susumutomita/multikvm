@@ -10,11 +10,13 @@ final class TransportTests: XCTestCase {
         let offered = expectation(description: "native offer")
         let peer = PeerLink()
         var messages: [String] = []
-        peer.onFailed = { message in
-            XCTFail(message)
-            offered.fulfill()
-        }
-        peer.sendSignaling = { text in
+        peer.onEvent = { event in
+            if case .failed(let message) = event {
+                XCTFail(message)
+                offered.fulfill()
+                return
+            }
+            guard case .signaling(let text) = event else { return }
             messages.append(text)
             guard let data = text.data(using: .utf8),
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

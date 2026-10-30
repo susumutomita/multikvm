@@ -7,13 +7,13 @@ public enum EndpointError: Error, Equatable {
     case missingHost
 }
 
-public enum LiteralAddressKind: Equatable {
+public enum LiteralAddressKind: Equatable, Sendable {
     case tailnet
     case otherIP
     case hostname
 }
 
-public struct JetKVMEndpoint: Equatable {
+public struct JetKVMEndpoint: Equatable, Sendable {
     public var origin: URL
     public var signaling: URL
     public var login: URL

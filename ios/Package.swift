@@ -17,8 +17,8 @@ let package = Package(
                 .product(name: "WebRTC", package: "WebRTC"),
             ],
             path: "MultiKVM",
-            exclude: ["Info.plist", "PrivacyInfo.xcprivacy", "InputController.swift", "RootView.swift", "SessionController.swift", "VideoRenderer.swift"],
-            sources: ["PeerLink.swift"]
+            exclude: ["Info.plist", "PrivacyInfo.xcprivacy", "InputController.swift", "RootView.swift", "SessionController.swift", "VideoRenderer.swift", "ConnectionPresentation.swift"],
+            sources: ["PeerLink.swift", "PeerSession.swift", "PeerDelegate.swift", "DeviceAuthenticator.swift", "LocalConnection.swift"]
         ),
         .testTarget(name: "TransportTests", dependencies: ["MultiKVMTransport"], path: "TransportTests"),
     ]

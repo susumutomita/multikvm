@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import MultiKVMCore
 
 final class EndpointTests: XCTestCase {
@@ -77,8 +78,17 @@ final class IceGateTests: XCTestCase {
 }
 
 final class SignalingTests: XCTestCase {
+    func testMalformedKnownMessagesAreDifferentFromUnknownMessagesAndEndOfCandidates() {
+        XCTAssertEqual(SignalingCodec.parse("{"), .malformed(.invalidJSON))
+        XCTAssertEqual(SignalingCodec.parse("{}"), .malformed(.missingType))
+        XCTAssertEqual(SignalingCodec.parse(#"{"type":"answer","data":"invalid"}"#), .malformed(.invalidAnswer))
+        XCTAssertEqual(SignalingCodec.parse(#"{"type":"new-ice-candidate","data":{}}"#), .malformed(.invalidCandidate))
+        XCTAssertEqual(SignalingCodec.parse(#"{"type":"future-message"}"#), .ignored)
+        XCTAssertEqual(SignalingCodec.parse(#"{"type":"new-ice-candidate","data":{"candidate":""}}"#), .ignored)
+    }
+
     func testAnswerAndOfferEnvelope() throws {
-        let description = SignalingCodec.sessionDescriptionJSON(type: "answer", sdp: "v=0\r\n")
+        let description = try SignalingCodec.sessionDescriptionJSON(type: "answer", sdp: "v=0\r\n")
         let encoded = Data(description.utf8).base64EncodedString()
         let wire = #"{"type":"answer","data":"\#(encoded)"}"#
         guard case .answer(let type, let sdp) = SignalingCodec.parse(wire) else {
@@ -101,9 +111,11 @@ final class SignalingTests: XCTestCase {
         )
         XCTAssertEqual(SignalingCodec.parse("ping"), .ping)
         XCTAssertEqual(SignalingCodec.pong, "pong")
-        guard case .iceCandidate(let candidate) = SignalingCodec.parse(
-            #"{"type":"new-ice-candidate","data":{"candidate":"candidate:1 1 UDP 1 100.64.0.2 9 typ host","sdpMid":"0","sdpMLineIndex":0}}"#
-        ) else {
+        guard
+            case .iceCandidate(let candidate) = SignalingCodec.parse(
+                #"{"type":"new-ice-candidate","data":{"candidate":"candidate:1 1 UDP 1 100.64.0.2 9 typ host","sdpMid":"0","sdpMLineIndex":0}}"#
+            )
+        else {
             return XCTFail("candidate")
         }
         XCTAssertEqual(candidate.kind, .tailnetHost)
@@ -113,7 +125,7 @@ final class SignalingTests: XCTestCase {
     func testLinkRequiresPairingBeforeVideo() {
         var state = LinkState(pairedHost: nil, host: "http://100.64.0.2")
         state.apply(.begin)
-        state.apply(.authNotRequired)
+        state.apply(.authenticated)
         state.apply(.metadata("1.0.0"))
         XCTAssertEqual(state.phase, .confirmingDevice(version: "1.0.0"))
         state.apply(.iceConnected)
@@ -128,7 +140,7 @@ final class SignalingTests: XCTestCase {
     func testKnownHostSkipsConfirm() {
         var state = LinkState(pairedHost: "http://100.64.0.2", host: "http://100.64.0.2")
         state.apply(.begin)
-        state.apply(.authOk)
+        state.apply(.authenticated)
         state.apply(.metadata("1.0.0"))
         XCTAssertEqual(state.phase, .negotiating)
     }

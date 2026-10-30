@@ -26,6 +26,7 @@ struct RootView: View {
                 connectForm
             }
         }
+        .onDisappear { session.disconnect() }
         .preferredColorScheme(.dark)
         .statusBarHidden(session.phase == .streaming)
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
@@ -102,7 +103,7 @@ struct RootView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("この JetKVM をペアリング")
                 .font(.title2.weight(.semibold))
-            Text(session.hostText)
+            Text(session.connectionHost)
                 .font(.system(.body, design: .monospaced))
             Text("ファームウェア \(version.isEmpty ? "不明" : version)")
             Text("ペアリングすると、次回からこのアドレスだけを映像の接続先にします。パスワードは保存しません。")

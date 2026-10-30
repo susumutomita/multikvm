@@ -12,15 +12,12 @@ public enum AbsoluteAxis {
     }
 }
 
-public struct AbsolutePointer {
-    public init() {}
-
-    public mutating func event(xUnit: Double, yUnit: Double, buttons: UInt8) -> OutgoingHid {
+public enum AbsolutePointer {
+    public static func report(xUnit: Double, yUnit: Double, buttons: UInt8) -> OutgoingHid {
         let x = AbsoluteAxis.hid(xUnit)
         let y = AbsoluteAxis.hid(yUnit)
         // Every report carries button state, so movement and releases must share ordering.
         return OutgoingHid(
-            channel: .reliable,
             bytes: HidMessage.pointer(x: x, y: y, buttons: buttons)
         )
     }
@@ -35,11 +32,10 @@ public enum RelativePointer {
             ys = [0]
         }
         let count = max(xs.count, ys.count)
-        return (0 ..< count).map { index in
+        return (0..<count).map { index in
             let x = index < xs.count ? xs[index] : 0
             let y = index < ys.count ? ys[index] : 0
             return OutgoingHid(
-                channel: .reliable,
                 bytes: HidMessage.mouse(dx: x, dy: y, buttons: buttons)
             )
         }
@@ -77,17 +73,20 @@ public struct WheelAccumulator {
 }
 
 public enum Wheel {
-    public static func jsonRpc(id: Int, wheelX: Int, wheelY: Int) -> String {
-        let object: [String: Any] = [
-            "jsonrpc": "2.0",
-            "method": "wheelReport",
-            "params": ["wheelY": wheelY, "wheelX": wheelX],
-            "id": id,
-        ]
-        let data = try? JSONSerialization.data(withJSONObject: object)
-        return data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    public static func jsonRpc(id: Int, wheelX: Int, wheelY: Int) throws -> String {
+        let message = Report(id: id, params: Delta(wheelY: wheelY, wheelX: wheelX))
+        return String(decoding: try JSONEncoder().encode(message), as: UTF8.self)
     }
-
+    private struct Delta: Encodable {
+        let wheelY: Int
+        let wheelX: Int
+    }
+    private struct Report: Encodable {
+        let jsonrpc = "2.0"
+        let method = "wheelReport"
+        let id: Int
+        let params: Delta
+    }
 
 }
 

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import MultiKVMCore
 
 final class KeyboardTests: XCTestCase {
@@ -24,7 +25,6 @@ final class KeyboardTests: XCTestCase {
     func testModifiersAndRollover() {
         var keyboard = KeyboardModel()
         let down = keyboard.keyDown(0xE0)
-        XCTAssertEqual(down.channel, .reliable)
         XCTAssertEqual(down.bytes, Data([0x02, HidModifier.leftControl, 0, 0, 0, 0, 0, 0]))
 
         let letter = keyboard.keyDown(HidUsage.keyboardA)
@@ -34,7 +34,7 @@ final class KeyboardTests: XCTestCase {
         _ = keyboard.keyUp(0xE0)
         XCTAssertEqual(keyboard.report().bytes[1], 0)
 
-        for usage in UInt8(0x04) ... UInt8(0x09) {
+        for usage in UInt8(0x04)...UInt8(0x09) {
             _ = keyboard.keyDown(usage)
         }
         let extra = keyboard.keyDown(0x0A)
@@ -90,43 +90,40 @@ final class PointerTests: XCTestCase {
         XCTAssertNil(wheel.event(dx: .nan, dy: .infinity))
     }
 
-    func testAbsoluteChannelAndRange() {
-        var pointer = AbsolutePointer()
-        let first = pointer.event(xUnit: 0, yUnit: 1, buttons: 0)
-        XCTAssertEqual(first.channel, .reliable)
+    func testAbsoluteCoordinatesAndButtonTransitions() {
+        let first = AbsolutePointer.report(xUnit: 0, yUnit: 1, buttons: 0)
         XCTAssertEqual(first.bytes.count, 10)
         XCTAssertEqual(first.bytes[0], 0x03)
-        let move = pointer.event(xUnit: 0.5, yUnit: 0, buttons: 0)
-        XCTAssertEqual(move.channel, .reliable)
+        let move = AbsolutePointer.report(xUnit: 0.5, yUnit: 0, buttons: 0)
+        XCTAssertEqual(move.bytes, Data([3, 0, 0, 64, 0, 0, 0, 0, 0, 0]))
         XCTAssertEqual(AbsoluteAxis.hid(0.5), 16_384)
         XCTAssertEqual(AbsoluteAxis.hid(1), 32_767)
         XCTAssertEqual(AbsoluteAxis.hid(-1), 0)
         XCTAssertEqual(AbsoluteAxis.hid(.nan), 0)
-        let click = pointer.event(xUnit: 0.5, yUnit: 0, buttons: 0x01)
-        XCTAssertEqual(click.channel, .reliable)
+        let click = AbsolutePointer.report(xUnit: 0.5, yUnit: 0, buttons: 0x01)
         XCTAssertEqual(click.bytes.last, 0x01)
-        let drag = pointer.event(xUnit: 0.6, yUnit: 0.1, buttons: 0x01)
-        let release = pointer.event(xUnit: 0.6, yUnit: 0.1, buttons: 0)
-        XCTAssertTrue([click, drag, release].allSatisfy { $0.channel == .reliable })
+        let drag = AbsolutePointer.report(xUnit: 0.6, yUnit: 0.1, buttons: 0x01)
+        let release = AbsolutePointer.report(xUnit: 0.6, yUnit: 0.1, buttons: 0)
         XCTAssertEqual(release.bytes.last, 0)
+        XCTAssertEqual(drag.bytes.last, 1)
+        XCTAssertEqual(Array(drag.bytes.dropLast()), Array(release.bytes.dropLast()))
     }
 
-    func testStationaryRelativeClickAndReleaseProduceReliableReports() {
+    func testStationaryRelativeClickAndReleasePreserveButtonState() {
         let press = RelativePointer.reports(dx: 0, dy: 0, buttons: 1)
         let release = RelativePointer.reports(dx: 0, dy: 0, buttons: 0)
         XCTAssertEqual(press.map(\.bytes), [Data([0x06, 0, 0, 1])])
         XCTAssertEqual(release.map(\.bytes), [Data([0x06, 0, 0, 0])])
-        XCTAssertTrue((press + release).allSatisfy { $0.channel == .reliable })
     }
 
-    func testRelativeSplitAndWheel() {
+    func testRelativeSplitAndWheel() throws {
         let reports = RelativePointer.reports(dx: 300, dy: -200, buttons: 0x01)
         XCTAssertEqual(reports.count, 3)
+        XCTAssertTrue(reports.allSatisfy { $0.bytes[3] == 1 })
         XCTAssertEqual(reports.map(\.bytes[1]), [127, 127, 46])
         XCTAssertEqual(Int8(bitPattern: reports[0].bytes[2]), -127)
         XCTAssertEqual(Int8(bitPattern: reports[1].bytes[2]), -73)
         XCTAssertEqual(reports[2].bytes[2], 0)
-        XCTAssertTrue(reports.allSatisfy { $0.channel == .reliable && $0.bytes[3] == 0x01 })
 
         var wheel = WheelAccumulator()
         let down = wheel.event(dx: 0, dy: 40)
@@ -136,7 +133,7 @@ final class PointerTests: XCTestCase {
         XCTAssertEqual(up?.wheelX, 2)
         XCTAssertEqual(up?.wheelY, 1)
         XCTAssertNil(wheel.event(dx: 0, dy: 0))
-        let json = Wheel.jsonRpc(id: 7, wheelX: 0, wheelY: -1)
+        let json = try Wheel.jsonRpc(id: 7, wheelX: 0, wheelY: -1)
         XCTAssertTrue(json.contains(#""method":"wheelReport""#))
         XCTAssertTrue(json.contains(#""wheelY":-1"#))
     }
@@ -157,5 +154,50 @@ final class PointerTests: XCTestCase {
         let outside = VideoViewport.unit(location: PlanePoint(x: -20, y: 5000), content: rect)
         XCTAssertEqual(outside.0, 0)
         XCTAssertEqual(outside.1, 1)
+    }
+}
+
+final class RemoteInputTests: XCTestCase {
+    func testSyntheticShiftDoesNotReleaseOtherShiftedKeysOrPhysicalShift() {
+        var input = RemoteInput()
+        func key(_ usage: UInt8?, _ character: Character?, _ down: Bool, _ time: Double) -> OutgoingHid? {
+            input.key(
+                usage: usage, character: character, down: down, source: .uiKit,
+                at: time, keyboardSide: .us, hostLayout: .us)
+        }
+        _ = key(0xE1, nil, true, 0)
+        _ = key(nil, "A", true, 1)
+        _ = key(nil, "B", true, 2)
+        XCTAssertEqual(key(nil, "A", false, 3)?.bytes[1], HidModifier.leftShift)
+        XCTAssertEqual(key(nil, "B", false, 4)?.bytes[1], HidModifier.leftShift)
+        XCTAssertEqual(key(0xE1, nil, false, 5)?.bytes[1], 0)
+    }
+
+    func testReleaseKeepsPointerPositionAndClearsWheelAndKeyboard() throws {
+        var input = RemoteInput()
+        _ = input.absolute(x: 0.6, y: 0.7, buttons: 1)
+        _ = input.key(
+            usage: HidUsage.keyboardA, character: nil, down: true,
+            source: .gameController, at: 0, keyboardSide: .us, hostLayout: .us)
+        XCTAssertNil(try input.scroll(dx: 0, dy: 39))
+        let releases = input.release(mode: .absolute)
+        XCTAssertEqual(releases[0], KeyboardModel().report())
+        XCTAssertEqual(releases[1], AbsolutePointer.report(xUnit: 0.6, yUnit: 0.7, buttons: 0))
+        XCTAssertNil(try input.scroll(dx: 0, dy: 1))
+    }
+
+    func testGameControllerFallbackTapReleasesAndMeasurementDoesNotStealHeldF12() {
+        var input = RemoteInput()
+        let down = input.key(
+            usage: HidUsage.keyboardF12, character: nil, down: true,
+            source: .gameController, at: 0, keyboardSide: .us, hostLayout: .us)
+        XCTAssertTrue(down!.bytes.contains(HidUsage.keyboardF12))
+        XCTAssertNil(input.measurement(down: true))
+        let up = input.key(
+            usage: HidUsage.keyboardF12, character: nil, down: false,
+            source: .gameController, at: 0.001, keyboardSide: .us, hostLayout: .us)
+        XCTAssertEqual(up, KeyboardModel().report())
+        XCTAssertNotNil(input.measurement(down: true))
+        XCTAssertEqual(input.measurement(down: false), KeyboardModel().report())
     }
 }

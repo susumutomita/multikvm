@@ -3,118 +3,265 @@ import XCTest
 
 @testable import MultiKVM
 
-final class DeviceProtocol: URLProtocol {
-    static var onRequest: ((DeviceProtocol) -> Void)?
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    private var responseWork: DispatchWorkItem?
-    override func startLoading() { Self.onRequest?(self) }
-    override func stopLoading() { responseWork?.cancel() }
-
-    func respondAfterDelay(_ status: Int) {
-        let work = DispatchWorkItem { [weak self] in self?.respond(status) }
-        responseWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+@MainActor
+private final class TestConnection: LocalConnecting {
+    var onMessage: (@MainActor (SignalingMessage) -> Void)?
+    var onFailure: (@MainActor (LocalConnectionError) -> Void)?
+    var authenticationError: Error?
+    var holdAuthentication = false
+    var pending: CheckedContinuation<Void, Error>?
+    var opened = false
+    var closed = false
+    var sent: [String] = []
+    func authenticate(at endpoint: JetKVMEndpoint, password: String) async throws {
+        if holdAuthentication { try await withCheckedThrowingContinuation { pending = $0 } }
+        if let authenticationError { throw authenticationError }
     }
-
-    func respond(_ status: Int) {
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data("{}".utf8))
-        client?.urlProtocolDidFinishLoading(self)
+    func completeAuthentication() {
+        pending?.resume()
+        pending = nil
     }
+    func openSignaling(at endpoint: JetKVMEndpoint) { opened = true }
+    func send(_ text: String) { sent.append(text) }
+    func close() {
+        closed = true
+        onMessage = nil
+        onFailure = nil
+    }
+}
+
+@MainActor
+private final class TestPeer: PeerSession {
+    var onEvent: (@MainActor (PeerEvent) -> Void)?
+    var started = false
+    var stopped = false
+    var acceptsHid = true
+    var reports: [OutgoingHid] = []
+    var rpc: [String] = []
+    func start() { started = true }
+    func stop() {
+        stopped = true
+        onEvent = nil
+    }
+    func requestKeyframe() {}
+    func acceptAnswer(type: String, sdp: String) {}
+    func addRemote(_ candidate: IceCandidate) {}
+    func sendHid(_ message: OutgoingHid) -> Bool {
+        guard acceptsHid else { return false }
+        reports.append(message)
+        return true
+    }
+    func sendRpc(_ text: String) { rpc.append(text) }
+}
+
+private final class SessionReference {
+    weak var value: SessionController?
+    init(_ value: SessionController?) { self.value = value }
 }
 
 final class SessionControllerTests: XCTestCase {
     @MainActor
-    private func controller() -> SessionController {
+    private func controller(_ connections: [TestConnection], _ peers: [TestPeer]) -> SessionController {
         let defaults = UserDefaults(suiteName: "multikvm-tests-\(UUID())")!
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [DeviceProtocol.self]
-        return SessionController(defaults: defaults, configuration: configuration)
+        var connections = connections
+        var peers = peers
+        return SessionController(
+            defaults: defaults,
+            makeConnection: { connections.removeFirst() }, makePeer: { peers.removeFirst() })
     }
 
     @MainActor
-    private func waitUntilSettled(_ session: SessionController) async throws {
+    private func waitUntil(_ condition: () -> Bool) async throws {
         for _ in 0..<200 {
-            if !session.isBusy { return }
+            if condition() { return }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTFail("connection did not settle")
     }
 
-    override func tearDown() {
-        DeviceProtocol.onRequest = nil
-        super.tearDown()
+    @MainActor
+    private func establish(_ session: SessionController, _ connection: TestConnection, _ peer: TestPeer) async throws {
+        session.connect()
+        try await waitUntil { connection.opened }
+        connection.onMessage?(.deviceMetadata(version: "test-version"))
+        if case .confirmingDevice = session.phase { session.confirmPairing() }
+        XCTAssertEqual(session.phase, .negotiating)
+        XCTAssertTrue(peer.started)
+        peer.onEvent?(.connected)
+        XCTAssertEqual(session.phase, .streaming)
     }
 
     @MainActor
     func testInvalidAddressCanBeCorrectedAndRetried() async throws {
-        let session = controller()
+        let connection = TestConnection()
+        let peer = TestPeer()
+        let session = controller([connection], [peer])
         session.hostText = "ftp://invalid"
         session.connect()
-        guard case .closed = session.phase else { return XCTFail("invalid address was accepted") }
-        let requested = expectation(description: "retry requested device")
-        DeviceProtocol.onRequest = { request in
-            XCTAssertEqual(request.request.url?.path, "/device")
-            request.respond(401)
-            requested.fulfill()
-        }
-        session.hostText = "http://jetkvm.example.ts.net"
-        session.connect()
-        await fulfillment(of: [requested], timeout: 2)
-        try await waitUntilSettled(session)
-        XCTAssertEqual(session.phase, .closed(reason: "ローカルパスワードが必要です"))
-        session.disconnect()
-    }
-
-    @MainActor
-    func testDisconnectDuringDeviceRequestCannotReopenTransport() async throws {
-        let session = controller()
-        let requested = expectation(description: "device requested")
-        DeviceProtocol.onRequest = { request in
-            request.respondAfterDelay(200)
-            requested.fulfill()
-        }
+        XCTAssertEqual(session.phase, .closed(reason: "アドレスを読めません"))
         session.hostText = "jetkvm.example.ts.net"
-        session.connect()
-        await fulfillment(of: [requested], timeout: 2)
+        try await establish(session, connection, peer)
         session.disconnect()
-        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(connection.closed)
+        XCTAssertTrue(peer.stopped)
         XCTAssertEqual(session.phase, .closed(reason: "切断しました"))
-        XCTAssertFalse(session.isBusy)
     }
 
     @MainActor
-    func testLoginFailureClearsPasswordAndAllowsRetry() async throws {
-        let session = controller()
-        let login = expectation(description: "login rejected")
-        DeviceProtocol.onRequest = { request in
-            if request.request.url?.path == "/device" {
-                request.respond(401)
-            } else {
-                XCTAssertEqual(request.request.url?.path, "/auth/login-local")
-                XCTAssertEqual(request.request.httpMethod, "POST")
-                request.respond(429)
-                login.fulfill()
-            }
-        }
-        session.hostText = "jetkvm.example.ts.net"
-        session.password = "test-only-password"
+    func testCanceledAuthenticationCannotOverwriteReconnect() async throws {
+        let old = TestConnection()
+        let next = TestConnection()
+        old.holdAuthentication = true
+        let session = controller([old, next], [TestPeer()])
+        session.hostText = "first.example.ts.net"
         session.connect()
-        await fulfillment(of: [login], timeout: 2)
-        try await waitUntilSettled(session)
-        XCTAssertEqual(session.password, "")
-        XCTAssertEqual(session.phase, .closed(reason: "パスワード試行が多すぎます"))
+        try await waitUntil { old.pending != nil }
+        let staleFailure = old.onFailure
+        session.disconnect()
+        session.hostText = "second.example.ts.net"
+        session.connect()
+        try await waitUntil { next.opened }
+        next.onMessage?(.deviceMetadata(version: "second"))
+        old.completeAuthentication()
+        staleFailure?(.network(.timedOut))
+        await Task.yield()
+        XCTAssertFalse(old.opened)
+        XCTAssertEqual(session.phase, .confirmingDevice(version: "second"))
+        session.disconnect()
     }
 
     @MainActor
-    func testMeasurementDoesNotFlashWithoutAnOpenHidChannel() {
-        let session = controller()
-        session.phase = .streaming
+    func testOldPeerEventsCannotAlterTheNextAttempt() async throws {
+        let c1 = TestConnection()
+        let c2 = TestConnection()
+        let p1 = TestPeer()
+        let p2 = TestPeer()
+        let session = controller([c1, c2], [p1, p2])
+        session.hostText = "jetkvm.example.ts.net"
+        try await establish(session, c1, p1)
+        let stale = p1.onEvent
+        session.disconnect()
+        session.connect()
+        try await waitUntil { c2.opened }
+        c2.onMessage?(.deviceMetadata(version: "second"))
+        XCTAssertEqual(session.phase, .negotiating)  // Saved pairing skips confirmation.
+        stale?(.connected)
+        stale?(.failed("old failure"))
+        stale?(.path("old path"))
+        stale?(.signaling("old offer"))
+        stale?(.video(Data([0]), width: 1, height: 1))
+        XCTAssertEqual(session.phase, .negotiating)
+        XCTAssertTrue(c2.sent.isEmpty)
+        XCTAssertEqual(session.overlay.path, "未確定")
+        p2.onEvent?(.connected)
+        XCTAssertEqual(session.phase, .streaming)
+        session.disconnect()
+    }
+
+    @MainActor
+    func testAuthenticationErrorsKeepTheirMeaningAndClearPassword() async throws {
+        for error in [LocalConnectionError.authenticationRejected, .rateLimited, .httpStatus(503), .network(.timedOut)]
+        {
+            let connection = TestConnection()
+            connection.authenticationError = error
+            let session = controller([connection], [])
+            session.hostText = "jetkvm.example.ts.net"
+            session.password = "test-only-password"
+            session.connect()
+            try await waitUntil { !session.isBusy }
+            XCTAssertEqual(session.phase, .closed(reason: error.displayMessage))
+            XCTAssertEqual(session.password, "")
+            XCTAssertTrue(connection.closed)
+        }
+    }
+
+    @MainActor
+    func testTransportFailureReleasesInputsAndAllowsRetry() async throws {
+        let c1 = TestConnection()
+        let c2 = TestConnection()
+        let p1 = TestPeer()
+        let p2 = TestPeer()
+        let session = controller([c1, c2], [p1, p2])
+        session.hostText = "jetkvm.example.ts.net"
+        try await establish(session, c1, p1)
+        session.hardwareKey(HidUsage.keyboardA, character: nil, down: true)
+        c1.onFailure?(.network(.networkConnectionLost))
+        XCTAssertTrue(p1.stopped)
+        XCTAssertTrue(p1.reports.suffix(2).contains { $0.bytes == KeyboardModel().report().bytes })
+        try await establish(session, c2, p2)
+        session.disconnect()
+    }
+
+    @MainActor
+    func testMeasurementRequiresHidAcceptanceAndReleasesItsKey() async throws {
+        let c = TestConnection()
+        let p = TestPeer()
+        let session = controller([c], [p])
+        session.hostText = "jetkvm.example.ts.net"
+        try await establish(session, c, p)
+        p.acceptsHid = false
         session.sendMeasureFlash()
         XCTAssertFalse(session.measurementFlash)
-        session.releaseKeys()
-        XCTAssertFalse(session.measurementFlash)
+        p.acceptsHid = true
+        session.sendMeasureFlash()
+        XCTAssertTrue(session.measurementFlash)
+        XCTAssertTrue(p.reports.last!.bytes.contains(HidUsage.keyboardF12))
+        try await waitUntil { !session.measurementFlash }
+        XCTAssertFalse(p.reports.last!.bytes.contains(HidUsage.keyboardF12))
+        session.disconnect()
     }
+    @MainActor
+    func testOutOfOrderMetadataClosesTheAttemptAndDoesNotLeaveTransportRunning() async throws {
+        let c = TestConnection()
+        let p = TestPeer()
+        let session = controller([c], [p])
+        session.hostText = "jetkvm.example.ts.net"
+        try await establish(session, c, p)
+        c.onMessage?(.deviceMetadata(version: "duplicate"))
+        guard case .closed = session.phase else { return XCTFail("protocol violation was accepted") }
+        XCTAssertTrue(c.closed)
+        XCTAssertTrue(p.stopped)
+    }
+
+    @MainActor
+    func testRendererReportsMalformedFormatSeparatelyFromIntentionalDrops() {
+        let renderer = VideoRenderer()
+        renderer.render(Data([0, 0, 0, 1, 0x67, 0, 0, 0, 1, 0x68, 0, 0, 0, 1, 0x65]), width: 2, height: 2)
+        XCTAssertGreaterThan(renderer.snapshot().processingFailures, 0)
+        XCTAssertEqual(renderer.snapshot().lastFailure?.operation, .format)
+        renderer.reset()
+        XCTAssertNil(renderer.snapshot().lastFailure)
+        XCTAssertEqual(renderer.snapshot().processingFailures, 0)
+    }
+
+    @MainActor
+    func testPairingShowsTheDialedHostEvenWhenTheNextInputIsEdited() async throws {
+        let c = TestConnection()
+        c.holdAuthentication = true
+        let session = controller([c], [])
+        session.hostText = "first.example.ts.net"
+        session.connect()
+        try await waitUntil { c.pending != nil }
+        session.hostText = "next.example.ts.net"
+        c.completeAuthentication()
+        try await waitUntil { c.opened }
+        c.onMessage?(.deviceMetadata(version: "first"))
+        XCTAssertEqual(session.connectionHost, "http://first.example.ts.net")
+        XCTAssertEqual(session.hostText, "next.example.ts.net")
+        session.rejectPairing()
+    }
+
+    @MainActor
+    func testReleasingControllerClosesItsActiveAttempt() async throws {
+        let c = TestConnection()
+        let p = TestPeer()
+        var session: SessionController? = controller([c], [p])
+        session!.hostText = "jetkvm.example.ts.net"
+        try await establish(session!, c, p)
+        let released = SessionReference(session)
+        session = nil
+        XCTAssertNil(released.value)
+        try await waitUntil { c.closed && p.stopped }
+    }
+
 }

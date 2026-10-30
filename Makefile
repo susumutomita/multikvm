@@ -98,8 +98,9 @@ swift_test:
 	swift test --package-path swift
 
 .PHONY: ci_local
-# CI (.github/workflows/ci.yml) が実行する検査を同じ順序でローカル再現する
-# 完全ミラー (install は除く)。before-commit は staged 差分向けの高速ゲートで、
+# Linux CI の共通ゲートを同じ順序でローカル再現する。
+# macOS 専用の WebRTC / iOS ビルド・実行テストは README の別コマンドで確認する。
+# Linux ジョブのミラー (install は除く)。before-commit は staged 差分向けの高速ゲートで、
 # audit_deps と harness 全件スキャンを含まないため、before-commit 緑は CI 緑を
 # 保証しない。PR 前に CI 相当を通したいときはこちらを使う (ADR-0007)。
 # 前提: audit_deps はローカルの node_modules を見るため、lockfile を変更した後は

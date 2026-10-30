@@ -1,18 +1,9 @@
 import Foundation
 
-public enum HidChannel: Equatable {
-    case reliable
-    case unreliableOrdered
-}
-
+/// A validated HID report; transport always uses its reliable ordered channel.
 public struct OutgoingHid: Equatable {
-    public var channel: HidChannel
-    public var bytes: Data
-
-    public init(channel: HidChannel, bytes: Data) {
-        self.channel = channel
-        self.bytes = bytes
-    }
+    public let bytes: Data
+    public init(bytes: Data) { self.bytes = bytes }
 }
 
 public enum HidMessage {
@@ -171,7 +162,6 @@ public struct KeyboardModel {
             keys = pressed
         }
         return OutgoingHid(
-            channel: .reliable,
             bytes: HidMessage.keyboard(modifier: modifiers, keys: keys)
         )
     }
@@ -195,7 +185,7 @@ public enum KeyboardLayout {
         case (.jis, .us, HidUsage.keyboardInternational1):
             return HidUsage.keyboardNonUSBackslash
         case (.jis, .us, HidUsage.keyboardInternational4),
-             (.jis, .us, HidUsage.keyboardInternational5):
+            (.jis, .us, HidUsage.keyboardInternational5):
             return nil
         case (.us, .jis, HidUsage.keyboardBackslash):
             return HidUsage.keyboardInternational3
@@ -262,13 +252,13 @@ public enum KeyboardLayout {
             return nil
         }
         let value = scalar.value
-        if (97 ... 122).contains(value) {
+        if (97...122).contains(value) {
             return HidUsage.keyboardA + UInt8(value - 97)
         }
-        if (65 ... 90).contains(value) {
+        if (65...90).contains(value) {
             return HidUsage.keyboardA + UInt8(value - 65)
         }
-        if (49 ... 57).contains(value) {
+        if (49...57).contains(value) {
             return HidUsage.keyboard1 + UInt8(value - 49)
         }
         if value == 48 {

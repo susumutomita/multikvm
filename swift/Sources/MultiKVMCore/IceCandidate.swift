@@ -1,12 +1,12 @@
 import Foundation
 
-public enum IceCandidateKind: Equatable {
+public enum IceCandidateKind: Equatable, Sendable {
     case tailnetHost
     case otherHost
     case unwanted
 }
 
-public struct IceCandidate: Equatable {
+public struct IceCandidate: Equatable, Sendable {
     public var sdp: String
     public var sdpMid: String?
     public var lineIndex: Int?
