@@ -41,6 +41,14 @@ struct RootView: View {
             InputHost(session: session)
                 .ignoresSafeArea()
             overlay
+            if session.measurementFlash {
+                Rectangle()
+                    .fill(.white)
+                    .frame(width: 64, height: 64)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("F12 送信マーカー")
+            }
             VStack {
                 Spacer()
                 controlBar

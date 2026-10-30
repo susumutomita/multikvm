@@ -88,7 +88,8 @@ jobs:
         run: make lint
 
   swift:
-    runs-on: ubuntu-latest
+    # Swift 6.2 の配布物とランタイム依存は Ubuntu 24.04 用。
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Check out the code
@@ -108,3 +109,29 @@ jobs:
 
       - name: Test MultiKVMCore
         run: swift test --package-path swift
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Check out the code
+        # actions/checkout v4.3.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Build iOS simulator app
+        run: >-
+          xcodebuild -project ios/MultiKVM.xcodeproj -scheme MultiKVM
+          -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath /tmp/MultiKVM-DerivedData
+          -onlyUsePackageVersionsFromResolvedFile CODE_SIGNING_ALLOWED=NO build
+
+      - name: Test native WebRTC transport
+        run: swift test --package-path ios
+
+      - name: Test iOS connection lifecycle
+        run: |
+          simulator_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for group in devices.values() for d in group if d["name"].startswith("iPhone")))')
+          xcodebuild -project ios/MultiKVM.xcodeproj -scheme MultiKVM \
+            -destination "platform=iOS Simulator,id=$simulator_id" \
+            -derivedDataPath /tmp/MultiKVM-DerivedData \
+            -onlyUsePackageVersionsFromResolvedFile CODE_SIGNING_ALLOWED=NO test

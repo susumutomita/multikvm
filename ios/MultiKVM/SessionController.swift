@@ -12,6 +12,17 @@ struct OverlayModel: Equatable {
     var clockMs = 0
 }
 
+// A redirect must never move local authentication to a different host.
+private final class LocalSessionDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
 enum PointerMode: String {
     case absolute
     case relative
@@ -28,11 +39,12 @@ final class SessionController: ObservableObject {
     @Published var statusLine = "未接続"
     @Published var overlay = OverlayModel()
     @Published var capsLock = false
+    @Published var measurementFlash = false
     @Published var addressWarning: String?
     @Published var videoSize = PlaneSize(width: 0, height: 0)
 
     let renderer = VideoRenderer()
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let session: URLSession
     private var link: LinkState
     private var endpoint: JetKVMEndpoint?
@@ -40,10 +52,14 @@ final class SessionController: ObservableObject {
     private var peer: PeerLink?
     private var keyboard = KeyboardModel()
     private var absolute = AbsolutePointer()
+    private var lastAbsolutePoint = (x: 0.0, y: 0.0)
     private var rpcID = 0
     private var receiving = false
     private var clockTimer: Timer?
-    private var recentHardwareKeys: [UInt8: TimeInterval] = [:]
+    private var keyboardEvents = KeyboardEventFilter()
+    private var authenticationTask: Task<Void, Never>?
+    private var measurementTask: Task<Void, Never>?
+    private var connectionID = UUID()
     private var injectedShift = false
 
     var isBusy: Bool {
@@ -55,22 +71,22 @@ final class SessionController: ObservableObject {
         }
     }
 
-    init() {
-        let storedHost = UserDefaults.standard.string(forKey: Key.host) ?? ""
+    init(defaults: UserDefaults = .standard, configuration: URLSessionConfiguration = .ephemeral) {
+        self.defaults = defaults
+        let storedHost = defaults.string(forKey: Key.host) ?? ""
         hostText = storedHost
-        keyboardSide = KeyboardSide(rawValue: UserDefaults.standard.string(forKey: Key.keyboard) ?? "") ?? .us
-        hostLayout = KeyboardSide(rawValue: UserDefaults.standard.string(forKey: Key.hostLayout) ?? "") ?? .us
-        pointerMode = PointerMode(rawValue: UserDefaults.standard.string(forKey: Key.pointer) ?? "") ?? .absolute
+        keyboardSide = KeyboardSide(rawValue: defaults.string(forKey: Key.keyboard) ?? "") ?? .us
+        hostLayout = KeyboardSide(rawValue: defaults.string(forKey: Key.hostLayout) ?? "") ?? .us
+        pointerMode = PointerMode(rawValue: defaults.string(forKey: Key.pointer) ?? "") ?? .absolute
         link = LinkState(
-            pairedHost: UserDefaults.standard.string(forKey: Key.paired),
+            pairedHost: defaults.string(forKey: Key.paired),
             host: ""
         )
-        let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
         configuration.timeoutIntervalForRequest = 12
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        session = URLSession(configuration: configuration)
+        session = URLSession(configuration: configuration, delegate: LocalSessionDelegate(), delegateQueue: nil)
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshClock()
@@ -78,6 +94,11 @@ final class SessionController: ObservableObject {
         }
         clockTimer = timer
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    deinit {
+        clockTimer?.invalidate()
+        session.invalidateAndCancel()
     }
 
     func connect() {
@@ -101,10 +122,12 @@ final class SessionController: ObservableObject {
         link = LinkState(pairedHost: defaults.string(forKey: Key.paired), host: endpoint.pairedIdentity)
         link.apply(.begin)
         publishPhase("認証を確認しています")
-        Task { await authenticate(endpoint) }
+        let id = connectionID
+        authenticationTask = Task { await authenticate(endpoint, connectionID: id) }
     }
 
     func confirmPairing() {
+        guard case .confirmingDevice = phase else { return }
         link.apply(.confirm)
         if let host = link.pairedHost {
             defaults.set(host, forKey: Key.paired)
@@ -129,31 +152,58 @@ final class SessionController: ObservableObject {
     }
 
     func releaseKeys() {
+        measurementTask?.cancel()
+        measurementTask = nil
+        measurementFlash = false
+        keyboardEvents = KeyboardEventFilter()
         injectedShift = false
         let report = keyboard.clear()
         absolute = AbsolutePointer()
         peer?.sendHid(report)
+        if pointerMode == .absolute {
+            peer?.sendHid(absolute.event(xUnit: lastAbsolutePoint.x, yUnit: lastAbsolutePoint.y, buttons: 0))
+        } else {
+            pointerRelative(dx: 0, dy: 0, buttons: 0)
+        }
     }
 
     func togglePointerMode() {
+        releaseKeys()
         pointerMode = pointerMode == .absolute ? .relative : .absolute
         defaults.set(pointerMode.rawValue, forKey: Key.pointer)
         absolute = AbsolutePointer()
     }
 
     func sendMeasureFlash() {
-        hardwareKey(HidUsage.keyboardF12, character: nil, down: true)
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 80_000_000)
-            self.hardwareKey(HidUsage.keyboardF12, character: nil, down: false)
+        guard phase == .streaming, !measurementFlash else { return }
+        guard !keyboard.report().bytes.dropFirst(2).contains(HidUsage.keyboardF12) else { return }
+        guard peer?.sendHid(keyboard.keyDown(HidUsage.keyboardF12)) == true else {
+            _ = keyboard.keyUp(HidUsage.keyboardF12)
+            return
+        }
+        measurementFlash = true
+        let id = connectionID
+        measurementTask = Task { @MainActor in
+            do { try await Task.sleep(nanoseconds: 80_000_000) } catch { return }
+            guard self.connectionID == id else { return }
+            self.peer?.sendHid(self.keyboard.keyUp(HidUsage.keyboardF12))
+            self.measurementFlash = false
         }
     }
 
-    func hardwareKey(_ usage: UInt8?, character: Character?, down: Bool) {
+    func hardwareKey(
+        _ usage: UInt8?, character: Character?, down: Bool,
+        source: KeyboardEventFilter.Source = .uiKit
+    ) {
+        guard phase == .streaming else { return }
+        if let usage,
+            !keyboardEvents.accepts(usage: usage, down: down, source: source, at: ProcessInfo.processInfo.systemUptime)
+        {
+            return
+        }
         let resolved = resolve(usage: usage, character: character)
         guard let resolved else { return }
         if down {
-            recentHardwareKeys[resolved] = Date().timeIntervalSinceReferenceDate
             if shouldInjectShift(usage: usage, character: character) {
                 _ = keyboard.keyDown(0xE1)
                 injectedShift = true
@@ -170,15 +220,13 @@ final class SessionController: ObservableObject {
     }
 
     func gameControllerKey(_ usage: UInt8, down: Bool) {
-        if let seen = recentHardwareKeys[usage], Date().timeIntervalSinceReferenceDate - seen < 0.05 {
-            return
-        }
-        hardwareKey(usage, character: nil, down: down)
+        hardwareKey(usage, character: nil, down: down, source: .gameController)
     }
 
     func pointer(xUnit: Double, yUnit: Double, buttons: UInt8) {
         switch pointerMode {
         case .absolute:
+            lastAbsolutePoint = (xUnit, yUnit)
             peer?.sendHid(absolute.event(xUnit: xUnit, yUnit: yUnit, buttons: buttons))
         case .relative:
             break
@@ -216,9 +264,11 @@ final class SessionController: ObservableObject {
         return stroke.modifier != 0
     }
 
-    private func authenticate(_ endpoint: JetKVMEndpoint) async {
+    private func authenticate(_ endpoint: JetKVMEndpoint, connectionID id: UUID) async {
         let deviceStatus = await statusCode(for: endpoint.device, method: "GET", body: nil)
+        guard connectionID == id, !Task.isCancelled else { return }
         if deviceStatus == 200 {
+            password = ""
             link.apply(.authNotRequired)
             publishPhase("シグナリングを開いています")
             openSocket()
@@ -237,6 +287,7 @@ final class SessionController: ObservableObject {
             method: "POST",
             body: try? JSONSerialization.data(withJSONObject: ["password": password])
         )
+        guard connectionID == id, !Task.isCancelled else { return }
         password = ""
         guard login == 200 else {
             fail(login == 429 ? "パスワード試行が多すぎます" : "パスワードが違います")
@@ -270,19 +321,21 @@ final class SessionController: ObservableObject {
         socket = task
         receiving = true
         task.resume()
-        receiveNext()
+        receiveNext(task, connectionID: connectionID)
     }
 
-    private func receiveNext() {
-        socket?.receive { [weak self] result in
+    private func receiveNext(_ task: URLSessionWebSocketTask, connectionID id: UUID) {
+        task.receive { [weak self] result in
             Task { @MainActor in
-                guard let self, self.receiving else { return }
+                guard let self, self.receiving, self.connectionID == id, self.socket === task else { return }
                 switch result {
                 case .success(.string(let text)):
                     self.handleSignaling(text)
-                    self.receiveNext()
+                    self.receiveNext(task, connectionID: id)
                 case .success(.data):
-                    self.receiveNext()
+                    self.receiveNext(task, connectionID: id)
+                case .success:
+                    self.fail("未対応のシグナリング形式です")
                 case .failure(let error):
                     if self.receiving {
                         self.fail("シグナリングが切れました: \(error.localizedDescription)")
@@ -316,17 +369,23 @@ final class SessionController: ObservableObject {
     }
 
     private func startPeer() {
+        let id = connectionID
         let linkPeer = PeerLink()
         linkPeer.sendSignaling = { [weak self] text in
-            Task { @MainActor in
-                self?.socket?.send(.string(text)) { _ in }
+            guard let self, self.connectionID == id else { return }
+            self.socket?.send(.string(text)) { [weak self] error in
+                guard let error else { return }
+                Task { @MainActor in
+                    guard let self, self.connectionID == id else { return }
+                    self.fail("送信できません: \(error.localizedDescription)")
+                }
             }
         }
         linkPeer.onVideo = { [weak self] data, width, height in
-            self?.renderer.render(data, width: width, height: height)
-            let shot = self?.renderer.snapshot()
             Task { @MainActor in
-                guard let self, let shot else { return }
+                guard let self, self.connectionID == id else { return }
+                self.renderer.render(data, width: width, height: height)
+                let shot = self.renderer.snapshot()
                 self.videoSize = shot.videoSize
                 self.overlay.fps = shot.framesPerSecond
                 self.overlay.kbps = shot.bitsPerSecond / 1000
@@ -336,34 +395,38 @@ final class SessionController: ObservableObject {
         }
         linkPeer.onIceConnected = { [weak self] in
             Task { @MainActor in
-                self?.link.apply(.iceConnected)
-                self?.publishPhase("表示中")
-                self?.peer?.sendHid(self?.keyboard.report() ?? KeyboardModel().report())
+                guard let self, self.connectionID == id else { return }
+                self.link.apply(.iceConnected)
+                self.publishPhase("表示中")
+                self.peer?.sendHid(self.keyboard.report())
                 UIApplication.shared.isIdleTimerDisabled = true
             }
         }
         linkPeer.onFailed = { [weak self] message in
             Task { @MainActor in
-                self?.fail(message)
+                guard let self, self.connectionID == id else { return }
+                self.fail(message)
             }
         }
         linkPeer.onHidMessage = { [weak self] data in
             Task { @MainActor in
-                guard let inbound = InboundHid.parse(data) else { return }
-                self?.capsLock = inbound.capsLock
+                guard let self, self.connectionID == id, let inbound = InboundHid.parse(data) else { return }
+                self.capsLock = inbound.capsLock
                 if case .handshake = inbound {
-                    self?.peer?.sendHid(self?.keyboard.report() ?? KeyboardModel().clear())
+                    self.peer?.sendHid(self.keyboard.report())
                 }
             }
         }
         linkPeer.onRoundTripSeconds = { [weak self] seconds in
             Task { @MainActor in
-                self?.overlay.rttMs = seconds.map { $0 * 1000 }
+                guard let self, self.connectionID == id else { return }
+                self.overlay.rttMs = seconds.map { $0 * 1000 }
             }
         }
         linkPeer.onPath = { [weak self] path in
             Task { @MainActor in
-                self?.overlay.path = path
+                guard let self, self.connectionID == id else { return }
+                self.overlay.path = path
             }
         }
         peer = linkPeer
@@ -371,15 +434,27 @@ final class SessionController: ObservableObject {
     }
 
     private func closeTransport() {
+        connectionID = UUID()
+        authenticationTask?.cancel()
+        authenticationTask = nil
+        measurementTask?.cancel()
+        measurementTask = nil
+        measurementFlash = false
+        password = ""
         receiving = false
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
         peer?.stop()
         peer = nil
+        renderer.reset()
+        videoSize = PlaneSize(width: 0, height: 0)
+        overlay = OverlayModel()
+        capsLock = false
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
     private func fail(_ message: String) {
+        releaseKeys()
         link.apply(.failed(message))
         publishPhase(message)
         closeTransport()

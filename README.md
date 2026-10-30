@@ -6,7 +6,7 @@
 
 ## 何が動くか
 
-Linux でテストしているのは、JetKVM のローカル WebRTC シグナリング、ICE 候補の選別、HID レポート、JIS と US の変換、H.264 の分割、SDP の検査です。iOS アプリのソースは同梱しています。このリポジトリの CI は Linux だけで、iPhone 向けバイナリは作っていません。
+Linux でテストしているのは、JetKVM のローカル WebRTC シグナリング、ICE 候補の選別、HID レポート、JIS と US の変換、H.264 の分割、SDP の検査です。iOS アプリはシミュレータ向けと実機向けの署名なしビルドを確認しています。CI は Linux のプロトコルテストに加え、macOS で WebRTC の実際の offer 生成、iOS ビルド、認証と切断の回帰テストを実行します。
 
 ## iPhone で開く
 
@@ -28,6 +28,11 @@ Windows で `tools/latency/clock.html` を開きます。手順は [docs/latency
 
 ```bash
 swift test --package-path swift
+# macOS: アプリと同じ WebRTC で offer とデコーダを検証
+swift test --package-path ios
+xcodebuild -project ios/MultiKVM.xcodeproj -scheme MultiKVM \
+  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+  CODE_SIGNING_ALLOWED=NO build
 ```
 
 リポジトリには、派生元テンプレートのサプライチェイン検査も残しています。文書と TypeScript の検査は Bun です。
@@ -44,13 +49,14 @@ make ci_local
 
 次は JetKVM と iPhone が無いと確認できません。
 
-- iOS アプリが Xcode でコンパイルできること。WebRTC 156 の型名はヘッダをこの環境でビルドしていない。
 - iPhone が Tailscale の host 候補を出すこと。出さない場合、ファームウェア側の候補固定が要る。
 - `playout-delay` と空の ICE で、宅外の直接経路がリレーより短くなること。
 - HHKB Hybrid の JIS キー、修飾キー、トラックパッドのスクロール。
 - ローカルパスワードの Cookie と、別セッションの拒否。
 - AirPlay ミラー中に映像が黒くならないこと。
 - ガラスからガラスが約 50 ms に収まること。
+
+検証結果と残る実機確認は [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) に記録しています。
 
 ## ライセンス
 

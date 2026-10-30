@@ -115,11 +115,11 @@ DTLS の暗号コスト自体は、ガラスからガラスの 50 ms 予算の�
 | デコードと表示 | 15 ms | デコード完了後の enqueue 時間。ジッタバッファはここより前 |
 | 入力 | 10 ms | キーを押してから、分配した HDMI の先の画面が変わるまで |
 
-合計が 50 ms を超えても、どの区間が越えたかを先に見ます。計測手順は [latency.md](./latency.md) です。目標との差は [#5](https://github.com/susumutomita/multikvm/issues/5) で記録します。オーバーレイは fps、kbps、RTT/2、enqueue、破棄フレーム、経路、時計の下位ミリ秒を出します。
+合計が 50 ms を超えても、どの区間が越えたかを先に見ます。計測手順は [latency.md](./latency.md) です。目標との差は [#5](https://github.com/susumutomita/multikvm/issues/5) で記録します。オーバーレイは fps、kbps、RTT/2、enqueue、破棄フレーム、経路、時計の下位ミリ秒を出します。経路と RTT は選択済みの ICE candidate pair から取得します。候補収集中は「候補」と表示し、Tailscale 内部の直接通信と DERP の区別はアプリから断定しません。
 
 ## 入力と外部ディスプレイ
 
-キーボードは `UIKey` と `GCKeyboard` です。同じキーが 50 ms 以内に両方から来たら、`UIKey` を採用します。HHKB の JIS と US、Windows の JIS と US を設定で選び、usage を変換します。ポインタは絶対と相対を切り替え、スクロールは `wheelReport` です。絶対座標は映像のレターボックスを除いた 0 から 1 を、0 から 32767 に写します。
+キーボードは `UIKey` と `GCKeyboard` です。同じキーの同じ遷移が 50 ms 以内に別の入力元から来たら、重複だけを除きます。押下と解放を区別するので、短いタップの解放も送ります。HHKB の JIS と US、Windows の JIS と US を設定で選び、usage を変換します。ポインタは絶対と相対を切り替え、スクロールは `wheelReport` です。絶対座標は映像のレターボックスを除いた 0 から 1 を、0 から 32767 に写します。
 
 外部ディスプレイは、iPhone の画面ミラー（AirPlay を含む）を前提にします。HHKB、トラックパッド、外部モニタの実機確認は [#4](https://github.com/susumutomita/multikvm/issues/4) です。専用の `UIWindow` は iOS 16 以降のシーン構成が増えるので、今回は作りません。バックグラウンドに入ると切断し、非アクティブではキーを離します。
 
@@ -135,4 +135,4 @@ RK3588 の自作箱は、未改造 JetKVM とこのクライアントで 50 ms �
 
 Linux で `swift test` したのは、シグナリングの JSON、ICE の Tailscale 選別、接続フェーズ、HID レポート、JIS 変換、H.264 の depacketize、SDP の `playout-delay`、バーコードの往復です。
 
-iOS アプリは、この環境に Xcode が無いのでコンパイルしていません。WebRTC 156 の Objective-C 名、`AVSampleBufferDisplayLayer`、実機の ICE、HHKB、パスワード Cookie、ミラーは、JetKVM と iPhone が必要です。実機ビルドは [#2](https://github.com/susumutomita/multikvm/issues/2)、宅外の直結経路は [#3](https://github.com/susumutomita/multikvm/issues/3) です。詳細は [latency.md](./latency.md) と README の未検証一覧です。
+iOS アプリは Xcode 27.2 でシミュレータ向けと実機向けの署名なしビルドを確認しました。WebRTC 156 の offer 生成とデコーダの時刻は macOS のネイティブテストでも検証します。実機の ICE、HHKB、パスワード Cookie、ミラーは、JetKVM と iPhone が必要です。実機ビルドは [#2](https://github.com/susumutomita/multikvm/issues/2)、宅外の直結経路は [#3](https://github.com/susumutomita/multikvm/issues/3) です。詳細は [latency.md](./latency.md) と README の未検証一覧です。

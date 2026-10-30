@@ -18,9 +18,9 @@ final class PassthroughH264Decoder: NSObject, RTCVideoDecoder {
         0
     }
 
-    func releaseDecoder() -> Int {
+    func release() -> Int {
         callback = nil
-        0
+        return 0
     }
 
     func decode(
@@ -53,6 +53,7 @@ final class PassthroughH264Decoder: NSObject, RTCVideoDecoder {
         let buffer = RTCI420Buffer(width: 2, height: 2)
         let timestamp = Int64(encodedImage.timeStamp) * 1_000_000 / 90
         let frame = RTCVideoFrame(buffer: buffer, rotation: RTCVideoRotation._0, timeStampNs: timestamp)
+        frame.timeStamp = Int32(bitPattern: encodedImage.timeStamp)
         callback(frame)
     }
 }
@@ -61,7 +62,9 @@ final class PassthroughDecoderFactory: NSObject, RTCVideoDecoderFactory {
     var onAccessUnit: ((Data, Int32, Int32) -> Void)?
 
     func supportedCodecs() -> [RTCVideoCodecInfo] {
-        [RTCVideoCodecInfo(name: "H264")]
+        RTCDefaultVideoDecoderFactory().supportedCodecs().filter {
+            $0.name.caseInsensitiveCompare("H264") == .orderedSame
+        }
     }
 
     func createDecoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoDecoder)? {
@@ -74,7 +77,7 @@ final class PassthroughDecoderFactory: NSObject, RTCVideoDecoderFactory {
 }
 
 final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate {
-    var sendSignaling: ((String) -> Void)?
+    var sendSignaling: (@MainActor (String) -> Void)?
     var onVideo: ((Data, Int32, Int32) -> Void)?
     var onIceConnected: (() -> Void)?
     var onFailed: ((String) -> Void)?
@@ -99,7 +102,6 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
     private var remoteFlush: DispatchWorkItem?
     private var offerSent = false
     private var pendingSignals: [String] = []
-    private let signalLock = NSLock()
 
     func start() {
         WebRTCBoot.prepare()
@@ -123,14 +125,22 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
         self.peer = peer
         let transceiverInit = RTCRtpTransceiverInit()
         transceiverInit.direction = .recvOnly
-        let transceiver = peer.addTransceiver(of: .video, init: transceiverInit)
-        let capabilities = RTCRtpReceiver.rtpReceiverCapabilities(forKind: "video")
+        guard let transceiver = peer.addTransceiver(of: .video, init: transceiverInit) else {
+            onFailed?("映像の受信経路を作れません")
+            return
+        }
+        let capabilities = peerFactory.rtpReceiverCapabilities(forKind: "video")
         let h264 = capabilities.codecs.filter { $0.name.caseInsensitiveCompare("H264") == .orderedSame }
         if h264.isEmpty {
             onFailed?("H.264 の受信コーデックがありません")
             return
         }
-        transceiver.setCodecPreferences(h264)
+        do {
+            try transceiver.setCodecPreferences(h264, error: ())
+        } catch {
+            onFailed?("H.264 を設定できません: \(error.localizedDescription)")
+            return
+        }
 
         rpc = makeChannel(on: peer, label: "rpc", ordered: true, reliable: true)
         hidReliable = makeChannel(on: peer, label: "hidrpc", ordered: true, reliable: true)
@@ -138,29 +148,36 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
         hidUnordered = makeChannel(on: peer, label: "hidrpc-unreliable-nonordered", ordered: false, reliable: false)
 
         peer.offer(for: constraints) { [weak self] description, error in
-            guard let self else { return }
-            if let error {
-                self.onFailed?("offer を作れません: \(error.localizedDescription)")
-                return
-            }
-            guard let description else {
-                self.onFailed?("offer が空です")
-                return
-            }
-            let munged = OfferSdp.insertingPlayoutDelay(description.sdp)
-            let problems = OfferSdp.problems(in: munged)
-            if !problems.isEmpty {
-                self.onFailed?(problems.joined(separator: "\n"))
-                return
-            }
-            let offer = RTCSessionDescription(type: .offer, sdp: munged)
-            peer.setLocalDescription(offer) { error in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.peer === peer else { return }
                 if let error {
-                    self.onFailed?("local description を設定できません: \(error.localizedDescription)")
+                    self.onFailed?("offer を作れません: \(error.localizedDescription)")
                     return
                 }
-                let json = SignalingCodec.sessionDescriptionJSON(type: "offer", sdp: munged)
-                self.emit(SignalingCodec.offer(sessionDescriptionJSON: json), offer: true)
+                guard let description else {
+                    self.onFailed?("offer が空です")
+                    return
+                }
+                let munged = OfferSdp.insertingPlayoutDelay(description.sdp)
+                let problems = OfferSdp.problems(in: munged)
+                if !problems.isEmpty {
+                    self.onFailed?(problems.joined(separator: "\n"))
+                    return
+                }
+                let offer = RTCSessionDescription(type: .offer, sdp: munged)
+                peer.setLocalDescription(offer) { [weak self] error in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.peer === peer else { return }
+                        if let error {
+                            self.onFailed?("local description を設定できません: \(error.localizedDescription)")
+                            return
+                        }
+                        let json = SignalingCodec.sessionDescriptionJSON(type: "offer", sdp: munged)
+                        self.emit(SignalingCodec.offer(sessionDescriptionJSON: json), offer: true)
+
+                    }
+                }
+
             }
         }
     }
@@ -191,7 +208,8 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
         enqueueRemote(ready)
     }
 
-    func sendHid(_ message: OutgoingHid) {
+    @discardableResult
+    func sendHid(_ message: OutgoingHid) -> Bool {
         let channel: RTCDataChannel?
         switch message.channel {
         case .reliable:
@@ -199,11 +217,11 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
         case .unreliableOrdered:
             channel = (hidOrdered?.readyState == .open) ? hidOrdered : hidReliable
         }
-        guard let channel, channel.readyState == .open else { return }
+        guard let channel, channel.readyState == .open else { return false }
         if !hidReady, message.bytes.first != HidMessage.handshakeType {
-            return
+            return false
         }
-        channel.sendData(RTCDataBuffer(data: message.bytes, isBinary: true))
+        return channel.sendData(RTCDataBuffer(data: message.bytes, isBinary: true))
     }
 
     func sendRpc(_ text: String) {
@@ -243,36 +261,33 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
             sdpMLineIndex: Int32(candidate.lineIndex ?? 0),
             sdpMid: candidate.sdpMid
         )
-        peer?.add(ice)
+        peer?.add(ice) { [weak self] error in
+            guard let error else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.peer != nil else { return }
+                self.onFailed?("ICE 候補を追加できません: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func publishPath() {
-        onPath?(remoteGate.prefersTailnet || localGate.prefersTailnet ? "Tailscale host" : "LAN host")
+        onPath?(remoteGate.prefersTailnet || localGate.prefersTailnet ? "候補: Tailscale host" : "候補: LAN host")
     }
 
     private func emit(_ text: String, offer: Bool) {
-        signalLock.lock()
-        if offer {
-            offerSent = true
-        }
-        if offerSent {
-            let queued = pendingSignals
-            pendingSignals = []
-            signalLock.unlock()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.peer != nil else { return }
             if offer {
-                sendSignaling?(text)
-                for item in queued {
-                    sendSignaling?(item)
-                }
+                self.sendSignaling?(text)
+                self.offerSent = true
+                let queued = self.pendingSignals
+                self.pendingSignals = []
+                for item in queued { self.sendSignaling?(item) }
+            } else if self.offerSent {
+                self.sendSignaling?(text)
             } else {
-                for item in queued {
-                    sendSignaling?(item)
-                }
-                sendSignaling?(text)
+                self.pendingSignals.append(text)
             }
-        } else {
-            pendingSignals.append(text)
-            signalLock.unlock()
         }
     }
 
@@ -289,38 +304,51 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        switch newState {
-        case .connected, .completed:
-            if !notifiedConnected {
-                notifiedConnected = true
-                onIceConnected?()
-                startStats()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.peer === peerConnection else { return }
+            switch newState {
+            case .connected, .completed:
+                if !notifiedConnected {
+                    notifiedConnected = true
+                    onIceConnected?()
+                    startStats()
+                }
+            case .failed, .disconnected:
+                let failed = newState == .failed
+                onFailed?("ICE が \(failed ? "失敗" : "切断") しました。Tailscale が直接つながっているか確認してください")
+            case .new, .checking, .closed, .count:
+                break
+            @unknown default:
+                break
             }
-        case .failed, .disconnected:
-            let failed = newState == .failed
-            onFailed?("ICE が \(failed ? "失敗" : "切断") しました。Tailscale が直接つながっているか確認してください")
-        case .new, .checking, .closed:
-            break
-        @unknown default:
-            break
+
         }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
-        guard newState == .complete else { return }
-        let ready = localGate.flush()
-        publishPath()
-        for candidate in ready {
-            emit(SignalingCodec.iceCandidate(candidate), offer: false)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.peer === peerConnection else { return }
+            guard newState == .complete else { return }
+            let ready = localGate.flush()
+            publishPath()
+            for candidate in ready {
+                emit(SignalingCodec.iceCandidate(candidate), offer: false)
+            }
+
         }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        let parsed = IceCandidate(sdp: candidate.sdp, sdpMid: candidate.sdpMid, lineIndex: Int(candidate.sdpMLineIndex))
-        for item in localGate.receive(parsed) {
-            emit(SignalingCodec.iceCandidate(item), offer: false)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.peer === peerConnection else { return }
+            let parsed = IceCandidate(
+                sdp: candidate.sdp, sdpMid: candidate.sdpMid, lineIndex: Int(candidate.sdpMLineIndex))
+            for item in localGate.receive(parsed) {
+                emit(SignalingCodec.iceCandidate(item), offer: false)
+            }
+            publishPath()
+
         }
-        publishPath()
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
@@ -330,34 +358,45 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {}
 
     func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
-        if dataChannel.label == "hidrpc", dataChannel.readyState == .open {
-            handshake()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.peer != nil else { return }
+            if dataChannel.label == "hidrpc", dataChannel.readyState == .open {
+                handshake()
+            }
+
         }
     }
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
-        guard buffer.isBinary else { return }
-        if dataChannel.label == "hidrpc" {
-            if case .handshake = InboundHid.parse(buffer.data) {
-                hidReady = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.peer != nil else { return }
+            guard buffer.isBinary else { return }
+            if dataChannel.label == "hidrpc" {
+                if case .handshake = InboundHid.parse(buffer.data) {
+                    hidReady = true
+                }
+                onHidMessage?(buffer.data)
             }
-            onHidMessage?(buffer.data)
+
         }
     }
 
     func acceptAnswer(type: String, sdp: String) {
         let answer = RTCSessionDescription(type: type == "offer" ? .offer : .answer, sdp: sdp)
         peer?.setRemoteDescription(answer) { [weak self] error in
-            guard let self else { return }
-            if let error {
-                self.onFailed?("answer を設定できません: \(error.localizedDescription)")
-                return
-            }
-            self.remoteReady = true
-            let queued = self.pendingRemote
-            self.pendingRemote = []
-            for candidate in queued {
-                self.addNow(candidate)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.peer != nil else { return }
+                if let error {
+                    self.onFailed?("answer を設定できません: \(error.localizedDescription)")
+                    return
+                }
+                self.remoteReady = true
+                let queued = self.pendingRemote
+                self.pendingRemote = []
+                for candidate in queued {
+                    self.addNow(candidate)
+                }
+
             }
         }
     }
@@ -366,14 +405,31 @@ final class PeerLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegat
         statsTimer?.invalidate()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             self?.peer?.statistics { report in
-                var rtt: Double?
-                for stat in report.statistics.values where stat.type == "candidate-pair" {
-                    let state = stat.values["state"] as? String
-                    if state == "succeeded", let value = stat.values["currentRoundTripTime"] as? NSNumber {
-                        rtt = value.doubleValue
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.peer != nil else { return }
+                    let selectedID = report.statistics.values.compactMap {
+                        $0.type == "transport" ? $0.values["selectedCandidatePairId"] as? String : nil
+                    }.first
+                    let pair =
+                        selectedID.flatMap { report.statistics[$0] }
+                        ?? report.statistics.values.first {
+                            $0.type == "candidate-pair" && $0.values["state"] as? String == "succeeded"
+                                && ($0.values["nominated"] as? NSNumber)?.boolValue == true
+                        }
+                    self.onRoundTripSeconds?((pair?.values["currentRoundTripTime"] as? NSNumber)?.doubleValue)
+                    if let localID = pair?.values["localCandidateId"] as? String,
+                        let remoteID = pair?.values["remoteCandidateId"] as? String
+                    {
+                        let local = report.statistics[localID]?.values["address"] as? String
+                        let remote = report.statistics[remoteID]?.values["address"] as? String
+                        if let local, let remote {
+                            self.onPath?(
+                                TailnetAddress.isTailnet(local) || TailnetAddress.isTailnet(remote)
+                                    ? "Tailscale host" : "LAN host")
+                        }
                     }
+
                 }
-                self?.onRoundTripSeconds?(rtt)
             }
         }
         statsTimer = timer
@@ -389,7 +445,7 @@ private enum WebRTCBoot {
         didPrepare = true
         RTCInitializeSSL()
         RTCInitFieldTrialDictionary([
-            "WebRTC-ForcePlayoutDelay": "min_ms:0,max_ms:0",
+            "WebRTC-ForcePlayoutDelay": "min_ms:0,max_ms:0"
         ])
     }
 }

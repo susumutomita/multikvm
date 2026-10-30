@@ -63,6 +63,20 @@ final class VideoRenderer {
         )
     }
 
+    func reset() {
+        stateLock.withLock {
+            sps = nil
+            pps = nil
+            format = nil
+            formatKey = nil
+            videoSize = PlaneSize(width: 0, height: 0)
+            stats = StreamStats()
+            dropped = 0
+            lastEnqueueMs = 0
+        }
+        view.displayLayer.flushAndRemoveImage()
+    }
+
     func render(_ data: Data, width: Int32, height: Int32) {
         let started = CFAbsoluteTimeGetCurrent()
         let sample = stateLock.withLock { () -> CMSampleBuffer? in

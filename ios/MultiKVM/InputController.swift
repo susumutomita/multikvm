@@ -14,6 +14,7 @@ struct InputHost: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: InputViewController, context: Context) {
         controller.session = session
+        controller.updatePointerMode()
     }
 }
 
@@ -21,6 +22,15 @@ final class InputViewController: UIViewController, UIGestureRecognizerDelegate {
     var session: SessionController?
     private var lastPoint: CGPoint?
     private var buttons: UInt8 = 0
+    private var trackingMode: PointerMode?
+
+    func updatePointerMode() {
+        if trackingMode != session?.pointerMode {
+            trackingMode = session?.pointerMode
+            lastPoint = nil
+            buttons = 0
+        }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -29,6 +39,7 @@ final class InputViewController: UIViewController, UIGestureRecognizerDelegate {
         view.backgroundColor = .black
         let scroll = UIPanGestureRecognizer(target: self, action: #selector(onScroll(_:)))
         scroll.allowedScrollTypesMask = .all
+        scroll.allowedTouchTypes = []
         scroll.delegate = self
         view.addGestureRecognizer(scroll)
         let hover = UIHoverGestureRecognizer(target: self, action: #selector(onHover(_:)))
@@ -66,6 +77,7 @@ final class InputViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        lastPoint = nil
         apply(touches, event: event, ended: false)
     }
 
@@ -95,9 +107,28 @@ final class InputViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     @objc private func onHover(_ gesture: UIHoverGestureRecognizer) {
-        guard session?.pointerMode == .absolute else { return }
+        updatePointerMode()
         let point = gesture.location(in: view)
-        sendAbsolute(point, buttons: buttons)
+        if session?.pointerMode == .absolute {
+            sendAbsolute(point, buttons: buttons)
+        } else if buttons == 0 {
+            switch gesture.state {
+            case .began:
+                lastPoint = point
+            case .changed:
+                if let lastPoint {
+                    session?.pointerRelative(
+                        dx: Int((point.x - lastPoint.x).rounded()),
+                        dy: Int((point.y - lastPoint.y).rounded()), buttons: 0
+                    )
+                }
+                lastPoint = point
+            case .ended, .cancelled:
+                lastPoint = nil
+            default:
+                break
+            }
+        }
     }
 
     @objc private func gameControllerKeyboard() {
@@ -106,7 +137,7 @@ final class InputViewController: UIViewController, UIGestureRecognizerDelegate {
 
     private func installGameController() {
         GCKeyboard.coalesced?.keyboardInput?.keyChangedHandler = { [weak self] _, _, keyCode, pressed in
-            let usage = UInt8(truncatingIfNeeded: keyCode)
+            let usage = UInt8(truncatingIfNeeded: keyCode.rawValue)
             Task { @MainActor in
                 self?.session?.gameControllerKey(usage, down: pressed)
             }
@@ -128,13 +159,17 @@ final class InputViewController: UIViewController, UIGestureRecognizerDelegate {
         if ended, touches.count == event.map({ $0.allTouches?.count ?? touches.count }) ?? touches.count {
             buttons = 0
             lastPoint = nil
-            sendAbsolute(point, buttons: 0)
+            if session?.pointerMode == .relative {
+                session?.pointerRelative(dx: 0, dy: 0, buttons: 0)
+            } else {
+                sendAbsolute(point, buttons: 0)
+            }
             return
         }
         buttons = hidButtons(event: event, touch: touch)
-        if session?.pointerMode == .relative, let lastPoint {
-            let dx = Int((point.x - lastPoint.x).rounded())
-            let dy = Int((point.y - lastPoint.y).rounded())
+        if session?.pointerMode == .relative {
+            let dx = Int((point.x - (lastPoint ?? point).x).rounded())
+            let dy = Int((point.y - (lastPoint ?? point).y).rounded())
             session?.pointerRelative(dx: dx, dy: dy, buttons: buttons)
         } else {
             sendAbsolute(point, buttons: buttons)

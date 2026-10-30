@@ -2,6 +2,25 @@ import XCTest
 @testable import MultiKVMCore
 
 final class KeyboardTests: XCTestCase {
+    func testGameControllerShortTapKeepsRelease() {
+        var events = KeyboardEventFilter()
+        XCTAssertTrue(events.accepts(usage: 4, down: true, source: .gameController, at: 0))
+        XCTAssertTrue(events.accepts(usage: 4, down: false, source: .gameController, at: 0.01))
+        XCTAssertTrue(events.accepts(usage: 4, down: true, source: .gameController, at: 0.02))
+        XCTAssertTrue(events.accepts(usage: 4, down: false, source: .gameController, at: 0.03))
+    }
+
+    func testDuplicateKeyboardSourcesKeepBothTransitionsInEitherOrder() {
+        for first in [KeyboardEventFilter.Source.uiKit, .gameController] {
+            let second: KeyboardEventFilter.Source = first == .uiKit ? .gameController : .uiKit
+            var events = KeyboardEventFilter()
+            XCTAssertTrue(events.accepts(usage: 4, down: true, source: first, at: 1))
+            XCTAssertFalse(events.accepts(usage: 4, down: true, source: second, at: 1.001))
+            XCTAssertTrue(events.accepts(usage: 4, down: false, source: first, at: 1.01))
+            XCTAssertFalse(events.accepts(usage: 4, down: false, source: second, at: 1.011))
+        }
+    }
+
     func testModifiersAndRollover() {
         var keyboard = KeyboardModel()
         let down = keyboard.keyDown(0xE0)
@@ -73,6 +92,14 @@ final class PointerTests: XCTestCase {
         let click = pointer.event(xUnit: 0.5, yUnit: 0, buttons: 0x01)
         XCTAssertEqual(click.channel, .reliable)
         XCTAssertEqual(click.bytes.last, 0x01)
+    }
+
+    func testStationaryRelativeClickAndReleaseProduceReliableReports() {
+        let press = RelativePointer.reports(dx: 0, dy: 0, buttons: 1)
+        let release = RelativePointer.reports(dx: 0, dy: 0, buttons: 0)
+        XCTAssertEqual(press.map(\.bytes), [Data([0x06, 0, 0, 1])])
+        XCTAssertEqual(release.map(\.bytes), [Data([0x06, 0, 0, 0])])
+        XCTAssertTrue((press + release).allSatisfy { $0.channel == .reliable })
     }
 
     func testRelativeSplitAndWheel() {
