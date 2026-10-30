@@ -1,0 +1,116 @@
+import XCTest
+@testable import MultiKVMCore
+
+final class KeyboardTests: XCTestCase {
+    func testModifiersAndRollover() {
+        var keyboard = KeyboardModel()
+        let down = keyboard.keyDown(0xE0)
+        XCTAssertEqual(down.channel, .reliable)
+        XCTAssertEqual(down.bytes, Data([0x02, HidModifier.leftControl, 0, 0, 0, 0, 0, 0]))
+
+        let letter = keyboard.keyDown(HidUsage.keyboardA)
+        XCTAssertEqual(letter.bytes[1], HidModifier.leftControl)
+        XCTAssertEqual(letter.bytes[2], HidUsage.keyboardA)
+
+        _ = keyboard.keyUp(0xE0)
+        XCTAssertEqual(keyboard.report().bytes[1], 0)
+
+        for usage in UInt8(0x04) ... UInt8(0x09) {
+            _ = keyboard.keyDown(usage)
+        }
+        let extra = keyboard.keyDown(0x0A)
+        XCTAssertEqual(Array(extra.bytes.dropFirst(2)), Array(repeating: HidMessage.rollover, count: 6))
+        let released = keyboard.keyUp(0x04)
+        XCTAssertFalse(released.bytes.dropFirst(2).contains(HidMessage.rollover))
+        XCTAssertEqual(keyboard.clear().bytes, Data([0x02, 0, 0, 0, 0, 0, 0, 0]))
+    }
+
+    func testLayoutRemapAndCharacters() {
+        XCTAssertEqual(
+            KeyboardLayout.remap(usage: HidUsage.keyboardInternational3, keyboard: .jis, host: .us),
+            HidUsage.keyboardBackslash
+        )
+        XCTAssertNil(KeyboardLayout.remap(usage: HidUsage.keyboardInternational4, keyboard: .jis, host: .us))
+        XCTAssertEqual(
+            KeyboardLayout.remap(usage: HidUsage.keyboardBackslash, keyboard: .us, host: .jis),
+            HidUsage.keyboardInternational3
+        )
+        XCTAssertEqual(
+            KeyboardLayout.remap(usage: HidUsage.keyboardA, keyboard: .jis, host: .jis),
+            HidUsage.keyboardA
+        )
+        XCTAssertEqual(KeyboardLayout.stroke(for: "@", host: .us)?.usage, HidUsage.keyboard2)
+        XCTAssertEqual(KeyboardLayout.stroke(for: "@", host: .us)?.modifier, HidModifier.leftShift)
+        XCTAssertEqual(KeyboardLayout.stroke(for: "@", host: .jis)?.usage, HidUsage.keyboardLeftBracket)
+        XCTAssertEqual(KeyboardLayout.stroke(for: "@", host: .jis)?.modifier, 0)
+        XCTAssertEqual(KeyboardLayout.stroke(for: "¥", host: .jis)?.usage, HidUsage.keyboardInternational3)
+        XCTAssertEqual(KeyboardLayout.stroke(for: "A", host: .us)?.modifier, HidModifier.leftShift)
+        XCTAssertEqual(KeyboardLayout.stroke(for: "a", host: .jis)?.usage, HidUsage.keyboardA)
+        XCTAssertNil(KeyboardLayout.stroke(for: "あ", host: .jis))
+    }
+
+    func testRepeatIsIdempotent() {
+        var keyboard = KeyboardModel()
+        _ = keyboard.keyDown(HidUsage.keyboardA)
+        let again = keyboard.keyDown(HidUsage.keyboardA)
+        XCTAssertEqual(again.bytes.filter { $0 == HidUsage.keyboardA }.count, 1)
+    }
+}
+
+final class PointerTests: XCTestCase {
+    func testAbsoluteChannelAndRange() {
+        var pointer = AbsolutePointer()
+        let first = pointer.event(xUnit: 0, yUnit: 1, buttons: 0)
+        XCTAssertEqual(first.channel, .reliable)
+        XCTAssertEqual(first.bytes.count, 10)
+        XCTAssertEqual(first.bytes[0], 0x03)
+        let move = pointer.event(xUnit: 0.5, yUnit: 0, buttons: 0)
+        XCTAssertEqual(move.channel, .unreliableOrdered)
+        XCTAssertEqual(AbsoluteAxis.hid(0.5), 16_384)
+        XCTAssertEqual(AbsoluteAxis.hid(1), 32_767)
+        XCTAssertEqual(AbsoluteAxis.hid(-1), 0)
+        XCTAssertEqual(AbsoluteAxis.hid(.nan), 0)
+        let click = pointer.event(xUnit: 0.5, yUnit: 0, buttons: 0x01)
+        XCTAssertEqual(click.channel, .reliable)
+        XCTAssertEqual(click.bytes.last, 0x01)
+    }
+
+    func testRelativeSplitAndWheel() {
+        let reports = RelativePointer.reports(dx: 300, dy: -200, buttons: 0x01)
+        XCTAssertEqual(reports.count, 3)
+        XCTAssertEqual(reports.map(\.bytes[1]), [127, 127, 46])
+        XCTAssertEqual(Int8(bitPattern: reports[0].bytes[2]), -127)
+        XCTAssertEqual(Int8(bitPattern: reports[1].bytes[2]), -73)
+        XCTAssertEqual(reports[2].bytes[2], 0)
+        XCTAssertTrue(reports.allSatisfy { $0.channel == .reliable && $0.bytes[3] == 0x01 })
+
+        let down = Wheel.hid(userDeltaX: 0, userDeltaY: 40)
+        XCTAssertEqual(down?.wheelY, -1)
+        XCTAssertEqual(down?.wheelX, 0)
+        let up = Wheel.hid(userDeltaX: 80, userDeltaY: -40)
+        XCTAssertEqual(up?.wheelX, 2)
+        XCTAssertEqual(up?.wheelY, 1)
+        XCTAssertNil(Wheel.hid(userDeltaX: 0, userDeltaY: 0))
+        let json = Wheel.jsonRpc(id: 7, wheelX: 0, wheelY: -1)
+        XCTAssertTrue(json.contains(#""method":"wheelReport""#))
+        XCTAssertTrue(json.contains(#""wheelY":-1"#))
+    }
+
+    func testLetterbox() {
+        let rect = VideoViewport.contentRect(
+            view: PlaneSize(width: 1000, height: 1000),
+            video: PlaneSize(width: 1920, height: 1080)
+        )
+        XCTAssertEqual(rect.x, 0, accuracy: 0.01)
+        XCTAssertGreaterThan(rect.y, 0)
+        let unit = VideoViewport.unit(
+            location: PlanePoint(x: rect.x + rect.width, y: rect.y),
+            content: rect
+        )
+        XCTAssertEqual(unit.0, 1, accuracy: 0.001)
+        XCTAssertEqual(unit.1, 0, accuracy: 0.001)
+        let outside = VideoViewport.unit(location: PlanePoint(x: -20, y: 5000), content: rect)
+        XCTAssertEqual(outside.0, 0)
+        XCTAssertEqual(outside.1, 1)
+    }
+}

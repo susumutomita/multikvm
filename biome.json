@@ -46,8 +46,10 @@
       "!**/node_modules",
       "!**/dist",
       "!**/build",
+      "!**/.build",
       "!**/coverage",
       "!**/.next",
+      "!**/DerivedData",
       "!**/*.lock"
     ]
   },

@@ -1,116 +1,57 @@
-# typescript-template
+# MultiKVM
 
-TypeScript + Bun + Biome を使った Claude Code 向けモノレポテンプレート。
+自宅の JetKVM を、Tailscale 上の iPhone から見るための個人用 IP-KVM です。会社管理の Windows PC にはソフトウェアを入れません。映像とキーボード、ポインタだけを扱い、クリップボード、ファイル転送、録画はしません。
 
-## ツールスタック
+設計の正本は [docs/DESIGN.md](./docs/DESIGN.md) です。遅延の測り方は [docs/latency.md](./docs/latency.md) です。
 
-| 用途 | ツール |
-|------|--------|
-| ランタイム | Bun |
-| バックエンド | Hono |
-| フロントエンド | Vite + React |
-| リンター/フォーマッター | Biome |
-| テスト | bun test |
-| Git フック | Husky + lint-staged |
+## 何が動くか
 
-## セットアップ
+Linux でテストしているのは、JetKVM のローカル WebRTC シグナリング、ICE 候補の選別、HID レポート、JIS と US の変換、H.264 の分割、SDP の検査です。iOS アプリのソースは同梱しています。このリポジトリの CI は Linux だけで、iPhone 向けバイナリは作っていません。
+
+## iPhone で開く
+
+Xcode 16 以降で `ios/MultiKVM.xcodeproj` を開きます。署名チームを自分の Apple ID にし、iOS 17 の実機へ入れます。シミュレータでは Tailscale の utun とハードウェアキーボードを確認できません。
+
+接続先には、JetKVM の Tailscale 名か 100.64.0.0/10 のアドレスを入れます。`http://` は省略できます。初回は機器のバージョンを確認してから映像が始まります。ローカルパスワードはメモリだけに置き、保存しません。
+
+キーボード欄は、HHKB の配列と Windows の配列です。一致しているときは変換しません。ポインタは絶対と相対を切り替えます。オーバーレイに fps、ビットレート、RTT の半分、表示へ渡した時間、破棄数、経路、時計が出ます。
+
+JetKVM 側ではクラウド機能を切り、Tailscale SSH を許可せず、アプリからはローカルの WebSocket だけを使います。ACL の例と、未改造では UDP を 1 ポートにできない理由は設計文書にあります。
+
+## 遅延を測る
+
+Windows で `tools/latency/clock.html` を開きます。手順は [docs/latency.md](./docs/latency.md) です。
+
+## 開発
+
+プロトコルテストは Swift 6.2 です。
 
 ```bash
-# 依存をインストール（lifecycle scripts 無効）
+swift test --package-path swift
+```
+
+リポジトリには、派生元テンプレートのサプライチェイン検査も残しています。文書と TypeScript の検査は Bun です。
+
+```bash
 make install
-
-# Git hooks を有効化（必要時のみ）
-make setup-hooks
-
-# プロジェクトをスキャフォールド（初回のみ）
-# Claude Code で以下を実行
-/init-project
+make before-commit
+make ci_local
 ```
 
-## コマンド
+`make ci_local` は Bun の検査に加え、`swift test` を走らせます。Swift が PATH に無いと失敗します。GitHub Actions の `swift` ジョブは、Swift 6.2 の Ubuntu 24.04 アーカイブをチェックサム付きで展開してから同じテストを走らせます。
 
-```bash
-make install        # 依存をインストール（ignore-scripts）
-make setup-hooks    # Husky hooks をセットアップ
-make dev            # 全パッケージを開発モードで起動
-make lint           # biome check
-make format         # biome format
-make typecheck      # tsc --noEmit（全ワークスペース）
-make test           # bun test（全ワークスペース）
-make harness_test   # architecture-harness の検出ロジックをテスト
-nr check:pre-release # 公開品質 invariant を全件スキャン
-make audit_deps     # 依存 lifecycle script の baseline 監査（ADR-0007）
-make build          # ビルド（全ワークスペース）
-make before-commit  # コミット前チェック（harness + test + 公開品質 + lint）
-make ci_local       # CI 完全ミラー（audit_deps + harness 全件 + before-commit）
-```
+## 未検証
 
-## スキル
+次は JetKVM と iPhone が無いと確認できません。
 
-| スキル | 説明 |
-|--------|------|
-| `/init-project` | packages/backend（Hono）と packages/frontend（Vite + React）をスキャフォールド |
-| `/feature` | 新機能開発のオーケストレーション（ヒアリング → 仕様化 → Issue → 並列実装） |
-| `/architecture-harness` | invariant の機械検証。`why <RULE_ID>` で意図を表示 |
-| `/skill-audit` | スキル・フック・設定の監査。サードパーティスキルの導入前検査 |
-| `/follow-up` | scope 外の発見をフォローアップとして記録・解消管理 |
-| `/blindspot-pass` | 設計・Issue・PR・実装経路の未知を証拠付きで探索する review-only 検査 |
-| `/frontend-design` | 高品質なフロントエンド実装 |
+- iOS アプリが Xcode でコンパイルできること。WebRTC 156 の型名はヘッダをこの環境でビルドしていない。
+- iPhone が Tailscale の host 候補を出すこと。出さない場合、ファームウェア側の候補固定が要る。
+- `playout-delay` と空の ICE で、宅外の直接経路がリレーより短くなること。
+- HHKB Hybrid の JIS キー、修飾キー、トラックパッドのスクロール。
+- ローカルパスワードの Cookie と、別セッションの拒否。
+- AirPlay ミラー中に映像が黒くならないこと。
+- ガラスからガラスが約 50 ms に収まること。
 
-## ディレクトリ構成
+## ライセンス
 
-```
-.
-├── .claude/
-│   ├── settings.json       # Claude Code フック設定
-│   ├── rules/              # path-scoped ルール（対象パス作業時に自動ロード）
-│   ├── scripts/            # フック実行スクリプト
-│   └── skills/             # カスタムスキル
-├── packages/
-│   ├── backend/            # /init-project で Hono サーバーを生成
-│   └── frontend/           # /init-project で Vite + React を生成
-├── biome.json              # リンター/フォーマッター設定
-├── CLAUDE.md               # AI エージェント向け開発ガイドライン
-└── Makefile
-```
-
-## サプライチェイン防御
-
-このテンプレートは Shai-Hulud 系（[Flatt Security の解説](https://blog.flatt.tech/entry/mini_shai_hulud_2nd)）のサプライチェイン攻撃を多層で防ぐデフォルト値を持つ。
-
-- `make install` / `make install_ci` は常に `--ignore-scripts` を付ける。**Bun は `.npmrc` の `ignore-scripts` も `npm_config_ignore_scripts` 環境変数も読まない**（公式 docs では `bunfig.toml` のみが設定経路）ため、Bun を叩くコマンド側で毎回明示する必要がある。husky の `prepare` も巻き添えで止まるので `make setup-hooks` で明示的に opt-in する。
-- `bunfig.toml` の `trustedDependencies = []` で、Bun がデフォルトで信頼する「top 500 npm パッケージ」の lifecycle script もゼロにする。
-- `make before-commit` が走らせる `architecture-harness` が、Git URL 依存・lifecycle hook の濫用・IOC ファイル名・ロックファイル内の Git 解決を機械的に検出する（`INVARIANT_NO_GIT_DEPENDENCY` / `INVARIANT_LIFECYCLE_HOOK_SCOPED` / `INVARIANT_NO_KNOWN_IOC` / `INVARIANT_LOCKFILE_NO_GIT_RESOLUTION`）。
-- `make audit_deps` が lifecycle script を持つ依存の集合を `scripts/audit-baseline.json` に固定し、新規パッケージの出現・既存依存への hook 追加を CI で検出する。実行を止める防御（上記）に対し、こちらは攻撃面の増加に「気づく」防御（`INVARIANT_DEPS_LIFECYCLE_AUDITED`、[ADR-0007](./docs/adr/0007-ci-supply-chain-gates.md)）。
-- GitHub Actions の `uses:` は full commit SHA でピン留めし、`architecture-harness` が機械強制する（`INVARIANT_CI_ACTION_SHA_PINNED`）。
-- CI は `safe-chain` + 上記設定で重ねる。CI と同じ検査は `make ci_local` でローカル再現できる。
-- `.npmrc` は **意図的に置かない**。Bun は読まないので Bun の防御には寄与せず、「効いていそうで効いていない」security theater になるため。本テンプレートは Bun 専用。pnpm/npm/yarn を併用する派生プロジェクトは自分で `.npmrc` を足す。
-
-設計判断の正本は [ADR-0001](./docs/adr/0001-supply-chain-hardening.md)、invariant 一覧は [docs/architecture/harness.md](./docs/architecture/harness.md) を参照。
-
-## スキル・フックの監査
-
-スキル（`.claude/skills/`）とフック（`.claude/scripts/`、`.claude/settings.json`）はモデルのコンテキストに注入される実行可能な指示であり、npm 依存と同じくサプライチェインの一部として扱う。[NVIDIA SkillSpector](https://github.com/nvidia/skillspector) の知見を `architecture-harness` に移植し、以下を機械検出する。
-
-- `INVARIANT_SKILL_FRONTMATTER_VALID` — SKILL.md の frontmatter 検証（name とディレクトリ名の一致、description の品質）。
-- `INVARIANT_SKILL_NO_HIDDEN_INSTRUCTIONS` — 不可視 Unicode・base64 ブロック・HTML コメントによる隠し指示の検出。
-- `INVARIANT_SKILL_NO_EXFIL_EXEC` — リモート取得のシェルパイプ実行・base64 デコード実行の検出。
-
-サードパーティスキルの導入前検査と目視レビューのチェックリストは `/skill-audit` スキルに集約している。設計判断は [ADR-0002](./docs/adr/0002-skill-audit-invariants.md) を参照。
-
-## 公開前レビュー
-
-公開前の人間向け確認事項は
-[公開前チェックリスト](./docs/checklists/pre-release.md) を入口に、
-セキュリティ、アクセシビリティ、SEO / OGP、運用へ分割している。
-`nr check:pre-release` は、認証情報のブラウザ保存、危険な HTML 出力、
-安全でない外部リンク、画像の代替テキスト不足、公開 metadata の不足、
-本番ページの `noindex` を検出する。PR テンプレートと GitHub Actions から同じゲートを実行する。
-
-機械検査できない認可、cache、復旧、監視はチェックリストとレビューで確認する。
-設計判断と自動化の境界は
-[ADR-0006](./docs/adr/0006-pre-release-quality-guardrails.md) を参照。
-
-## 開発ガイドライン
-
-[CLAUDE.md](./CLAUDE.md) を参照。完了の品質基準は [docs/architecture/quality-bar.md](./docs/architecture/quality-bar.md)、その根拠は [ADR-0003](./docs/adr/0003-quality-first-no-mvp.md) にある。MVP は完了条件ではない。プロがそのまま使える品質で初回から出すことをデフォルトとする。
+MIT です。WebRTC の XCFramework はアプリのビルド時に stasel/WebRTC `156.0.0` から取得し、このリポジトリには入れません。

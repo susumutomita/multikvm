@@ -1,0 +1,72 @@
+public enum LinkPhase: Equatable {
+    case idle
+    case checkingAuth
+    case openingSignaling
+    case confirmingDevice(version: String)
+    case negotiating
+    case streaming
+    case closed(reason: String)
+}
+
+public enum LinkEvent: Equatable {
+    case begin
+    case authOk
+    case authNotRequired
+    case authFailed(String)
+    case metadata(String)
+    case confirm
+    case reject
+    case iceConnected
+    case failed(String)
+    case userClosed
+}
+
+public struct LinkState: Equatable {
+    public var phase: LinkPhase
+    public var pairedHost: String?
+    public var host: String
+
+    public init(pairedHost: String?, host: String) {
+        self.phase = .idle
+        self.pairedHost = pairedHost
+        self.host = host
+    }
+
+    public mutating func apply(_ event: LinkEvent) {
+        switch event {
+        case .begin:
+            phase = phase == .idle ? .checkingAuth : .closed(reason: "すでに開始しています")
+        case .authOk, .authNotRequired:
+            phase = phase == .checkingAuth ? .openingSignaling : .closed(reason: "認証の順序が崩れました")
+        case .authFailed(let reason):
+            phase = .closed(reason: reason)
+        case .metadata(let version):
+            guard phase == .openingSignaling else {
+                phase = .closed(reason: "デバイス情報の順序が崩れました")
+                return
+            }
+            if pairedHost == host {
+                phase = .negotiating
+            } else {
+                phase = .confirmingDevice(version: version)
+            }
+        case .confirm:
+            guard case .confirmingDevice = phase else {
+                phase = .closed(reason: "ペアリングの順序が崩れました")
+                return
+            }
+            pairedHost = host
+            phase = .negotiating
+        case .reject:
+            phase = .closed(reason: "ペアリングを取り消しました")
+        case .iceConnected:
+            if phase == .negotiating {
+                phase = .streaming
+            }
+        case .failed(let reason):
+            phase = .closed(reason: reason)
+        case .userClosed:
+            phase = .closed(reason: "切断しました")
+        }
+    }
+}
