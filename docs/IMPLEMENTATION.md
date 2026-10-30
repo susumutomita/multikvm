@@ -21,7 +21,7 @@
 - `make ci_local`: 成功。Swift 27 件、Bun harness 102 件、依存監査、公開品質、textlint、lint を通過。既存の ESLint 警告 18 件は残る。
 - `swift test --package-path ios`: WebRTC 156 のネイティブテスト 3 件成功。実 offer の H.264 High、packetization-mode、音声なし、RTP timestamp の保持を確認。
 - Xcode 27.2: Simulator Debug のアプリとテストターゲット、および iphoneos Release を署名なしでビルド成功。
-- 自動レビューの追加 3 件も修正。低速スクロールの端数を累積し、fallback 開始後の遅い LAN 候補も処理する。H.264 の局所的なフレーム欠落では表示を初期化し、キーフレームを要求して IDR から再開する。
+- 自動レビューの追加 4 件も修正。低速スクロールの端数を累積し、fallback 開始後の遅い LAN 候補も処理する。H.264 の局所的なフレーム欠落では表示を初期化し、キーフレームを要求して IDR から再開する。絶対ポインタの移動とボタン遷移も同じ順序保証チャネルへ揃える。
 - 独立レビューで 7 件を発見し、修正後の再レビューで解消を確認。追加でカーソル位置の保持と HTTP redirect 拒否を確認。
 - 起点の CI は Ubuntu 26.04 で libxml2 の導入に失敗していた。Swift 用ランナーを配布物と同じ Ubuntu 24.04 に固定。
 - 既存 Tailscale は Running、JetKVM 候補 1 台がオンライン。GET `/device` は 401。パスワードを取得せず、ログインと HID は未実施。

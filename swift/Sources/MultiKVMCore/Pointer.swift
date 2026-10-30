@@ -13,17 +13,14 @@ public enum AbsoluteAxis {
 }
 
 public struct AbsolutePointer {
-    private var lastButtons: UInt8?
-
     public init() {}
 
     public mutating func event(xUnit: Double, yUnit: Double, buttons: UInt8) -> OutgoingHid {
         let x = AbsoluteAxis.hid(xUnit)
         let y = AbsoluteAxis.hid(yUnit)
-        let buttonsChanged = lastButtons != buttons
-        lastButtons = buttons
+        // Every report carries button state, so movement and releases must share ordering.
         return OutgoingHid(
-            channel: buttonsChanged ? .reliable : .unreliableOrdered,
+            channel: .reliable,
             bytes: HidMessage.pointer(x: x, y: y, buttons: buttons)
         )
     }

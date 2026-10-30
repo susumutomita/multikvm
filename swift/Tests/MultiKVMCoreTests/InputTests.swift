@@ -97,7 +97,7 @@ final class PointerTests: XCTestCase {
         XCTAssertEqual(first.bytes.count, 10)
         XCTAssertEqual(first.bytes[0], 0x03)
         let move = pointer.event(xUnit: 0.5, yUnit: 0, buttons: 0)
-        XCTAssertEqual(move.channel, .unreliableOrdered)
+        XCTAssertEqual(move.channel, .reliable)
         XCTAssertEqual(AbsoluteAxis.hid(0.5), 16_384)
         XCTAssertEqual(AbsoluteAxis.hid(1), 32_767)
         XCTAssertEqual(AbsoluteAxis.hid(-1), 0)
@@ -105,6 +105,10 @@ final class PointerTests: XCTestCase {
         let click = pointer.event(xUnit: 0.5, yUnit: 0, buttons: 0x01)
         XCTAssertEqual(click.channel, .reliable)
         XCTAssertEqual(click.bytes.last, 0x01)
+        let drag = pointer.event(xUnit: 0.6, yUnit: 0.1, buttons: 0x01)
+        let release = pointer.event(xUnit: 0.6, yUnit: 0.1, buttons: 0)
+        XCTAssertTrue([click, drag, release].allSatisfy { $0.channel == .reliable })
+        XCTAssertEqual(release.bytes.last, 0)
     }
 
     func testStationaryRelativeClickAndReleaseProduceReliableReports() {
