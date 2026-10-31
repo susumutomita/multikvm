@@ -91,14 +91,22 @@ pre_release_check:
 # 拡張するか、"no script ならスキップ" 型 runner を用意して取り込むこと。
 before-commit: architecture_harness harness_test pre_release_check lint_text lint
 
+.PHONY: swift_test
+# MultiKVMCore は Linux で実行できるプロトコル実装。iOS ターゲットは含まない。
+# CI の swift ジョブと同じコマンド。Swift 6.2 が PATH にあること。
+swift_test:
+	swift test --package-path swift
+
 .PHONY: ci_local
-# CI (.github/workflows/ci.yml) が実行する検査を同じ順序でローカル再現する
-# 完全ミラー (install は除く)。before-commit は staged 差分向けの高速ゲートで、
+# Linux CI の共通ゲートを同じ順序でローカル再現する。
+# macOS 専用の WebRTC / iOS ビルド・実行テストは README の別コマンドで確認する。
+# Linux ジョブのミラー (install は除く)。before-commit は staged 差分向けの高速ゲートで、
 # audit_deps と harness 全件スキャンを含まないため、before-commit 緑は CI 緑を
 # 保証しない。PR 前に CI 相当を通したいときはこちらを使う (ADR-0007)。
 # 前提: audit_deps はローカルの node_modules を見るため、lockfile を変更した後は
 # 先に `make install_ci` (または `make install`) を済ませないと CI と結果がずれる。
-ci_local: audit_deps
+# swift_test は swift ジョブのミラー。Bun ジョブだけでは iOS プロトコルを見ない。
+ci_local: audit_deps swift_test
 	bun scripts/architecture-harness.ts --fail-on=error
 	$(MAKE) before-commit
 

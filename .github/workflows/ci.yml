@@ -86,3 +86,52 @@ jobs:
 
       - name: Lint and format check
         run: make lint
+
+  swift:
+    # Swift 6.2 の配布物とランタイム依存は Ubuntu 24.04 用。
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out the code
+        # actions/checkout v4.3.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Swift runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libncurses6 libcurl4 libxml2 zlib1g
+
+      - name: Install Swift 6.2
+        run: |
+          curl -fsSL -o /tmp/swift.tar.gz https://download.swift.org/swift-6.2-release/ubuntu2404/swift-6.2-RELEASE/swift-6.2-RELEASE-ubuntu24.04.tar.gz
+          echo "8e3d63a3371caad495e694414b9b9a22c5f68c6473077406c7296472a41bc077  /tmp/swift.tar.gz" | sha256sum -c -
+          sudo mkdir -p /opt/swift
+          sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
+          echo "/opt/swift/usr/bin" >> "$GITHUB_PATH"
+
+      - name: Test MultiKVMCore
+        run: swift test --package-path swift
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Check out the code
+        # actions/checkout v4.3.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Build iOS simulator app
+        run: >-
+          xcodebuild -project ios/MultiKVM.xcodeproj -scheme MultiKVM
+          -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath /tmp/MultiKVM-DerivedData
+          -onlyUsePackageVersionsFromResolvedFile CODE_SIGNING_ALLOWED=NO build
+
+      - name: Test native WebRTC transport
+        run: swift test --package-path ios
+
+      - name: Test iOS connection lifecycle
+        run: |
+          simulator_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for group in devices.values() for d in group if d["name"].startswith("iPhone")))')
+          xcodebuild -project ios/MultiKVM.xcodeproj -scheme MultiKVM \
+            -destination "platform=iOS Simulator,id=$simulator_id" \
+            -derivedDataPath /tmp/MultiKVM-DerivedData \
+            -onlyUsePackageVersionsFromResolvedFile CODE_SIGNING_ALLOWED=NO test

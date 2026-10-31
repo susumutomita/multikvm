@@ -1,0 +1,323 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+        BB2000010000000000000001 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = MultiKVMTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+        BB2000020000000000000002 = {isa = PBXFileSystemSynchronizedRootGroup; path = MultiKVMTests; sourceTree = "<group>"; };
+        BB2000030000000000000003 = {isa = PBXNativeTarget; buildConfigurationList = BB2000040000000000000004; buildPhases = (BB2000050000000000000005, BB2000060000000000000006, BB2000070000000000000007,); buildRules = (); dependencies = (BB2000080000000000000008,); fileSystemSynchronizedGroups = (BB2000020000000000000002,); name = MultiKVMTests; productName = MultiKVMTests; productReference = BB2000010000000000000001; productType = "com.apple.product-type.bundle.unit-test"; };
+        BB2000040000000000000004 = {isa = XCConfigurationList; buildConfigurations = (BB20000A000000000000000A, BB20000B000000000000000B,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        BB2000050000000000000005 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        BB2000060000000000000006 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        BB2000070000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        BB2000080000000000000008 = {isa = PBXTargetDependency; target = AA1000040000000000000004; targetProxy = BB2000090000000000000009; };
+        BB2000090000000000000009 = {isa = PBXContainerItemProxy; containerPortal = AA10000D000000000000000D; proxyType = 1; remoteGlobalIDString = AA1000040000000000000004; remoteInfo = MultiKVM; };
+        BB20000A000000000000000A = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = dev.multikvm.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MultiKVM.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MultiKVM"; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",); }; name = Debug; };
+        BB20000B000000000000000B = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = dev.multikvm.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MultiKVM.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MultiKVM"; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",); }; name = Release; };
+
+
+/* Begin PBXBuildFile section */
+        AA2000010000000000000001 /* MultiKVMCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000B000000000000000B /* MultiKVMCore */; };
+        AA2000020000000000000002 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000C000000000000000C /* WebRTC */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AA1000010000000000000001 /* MultiKVM.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MultiKVM.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA1000020000000000000002 /* MultiKVM */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA1000030000000000000003 /* Exceptions for "MultiKVM" folder in "MultiKVM" target */,
+			);
+			path = MultiKVM;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AA1000030000000000000003 /* Exceptions for "MultiKVM" folder in "MultiKVM" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AA1000040000000000000004 /* MultiKVM */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA1000050000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+                AA2000010000000000000001 /* MultiKVMCore in Frameworks */,
+                AA2000020000000000000002 /* WebRTC in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA1000060000000000000006 = {
+			isa = PBXGroup;
+			children = (
+				AA1000020000000000000002 /* MultiKVM */,
+                BB2000020000000000000002 /* MultiKVMTests */,
+				AA1000070000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA1000070000000000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA1000010000000000000001 /* MultiKVM.app */,
+                BB2000010000000000000001 /* MultiKVMTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA1000040000000000000004 /* MultiKVM */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA1000080000000000000008 /* Build configuration list for PBXNativeTarget "MultiKVM" */;
+			buildPhases = (
+				AA1000090000000000000009 /* Sources */,
+				AA1000050000000000000005 /* Frameworks */,
+				AA10000A000000000000000A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA1000020000000000000002 /* MultiKVM */,
+			);
+			name = MultiKVM;
+			packageProductDependencies = (
+				AA10000B000000000000000B /* MultiKVMCore */,
+				AA10000C000000000000000C /* WebRTC */,
+			);
+			productName = MultiKVM;
+			productReference = AA1000010000000000000001 /* MultiKVM.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA10000D000000000000000D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1620;
+				LastUpgradeCheck = 1620;
+				TargetAttributes = {
+					AA1000040000000000000004 = {
+						CreatedOnToolsVersion = 16.2;
+					};
+				};
+			};
+			buildConfigurationList = AA10000E000000000000000E /* Build configuration list for PBXProject "MultiKVM" */;
+			developmentRegion = ja;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				ja,
+			);
+			mainGroup = AA1000060000000000000006;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AA10000F000000000000000F /* XCLocalSwiftPackageReference "../swift" */,
+				AA1000100000000000000010 /* XCRemoteSwiftPackageReference "WebRTC" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AA1000070000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA1000040000000000000004 /* MultiKVM */,
+                BB2000030000000000000003 /* MultiKVMTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA10000A000000000000000A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA1000090000000000000009 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA1000110000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA1000120000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AA1000130000000000000013 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MultiKVM/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.multikvm.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		AA1000140000000000000014 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MultiKVM/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.multikvm.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA10000E000000000000000E /* Build configuration list for PBXProject "MultiKVM" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA1000110000000000000011 /* Debug */,
+				AA1000120000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA1000080000000000000008 /* Build configuration list for PBXNativeTarget "MultiKVM" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA1000130000000000000013 /* Debug */,
+				AA1000140000000000000014 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		AA10000F000000000000000F /* XCLocalSwiftPackageReference "../swift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../swift;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AA1000100000000000000010 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stasel/WebRTC.git";
+			requirement = {
+				kind = exactVersion;
+				version = 156.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA10000B000000000000000B /* MultiKVMCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA10000F000000000000000F /* XCLocalSwiftPackageReference "../swift" */;
+			productName = MultiKVMCore;
+		};
+		AA10000C000000000000000C /* WebRTC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA1000100000000000000010 /* XCRemoteSwiftPackageReference "WebRTC" */;
+			productName = WebRTC;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AA10000D000000000000000D /* Project object */;
+}
